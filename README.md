@@ -1,6 +1,6 @@
 # Karate Club GCN 튜토리얼
 
-[Karate_club_gcn.ipynb](./Karate_club_gcn.ipynb)는 PyTorch와 PyTorch Geometric(PyG)을 사용해 그래프 신경망의 기본 원리를 실습하는 노트북입니다. Karate Club 소셜 네트워크에서 일부 노드의 커뮤니티 레이블만으로 GCN(Graph Convolutional Network)을 학습하고, 노드의 2차원 임베딩이 어떻게 변화하는지 시각화합니다.
+[Karate_club_gcn.ipynb](./Karate_club_gcn.ipynb)는 PyTorch와 PyTorch Geometric(PyG)을 사용해 그래프 신경망의 기본 원리를 실습하는 노트북입니다. Karate Club 소셜 네트워크에서 일부 노드의 커뮤니티 레이블만으로 GCN(Graph Convolutional Network)을 학습하고, 노드의 2차원 임베딩이 어떻게 변화하는지 애니메이션으로 시각화하고 GIF로 저장합니다.
 
 ## 학습 목표
 
@@ -8,6 +8,7 @@
 - `GCNConv`를 이용한 그래프 합성곱 모델 구현
 - 학습 노드에만 손실을 적용하는 반지도 학습 이해
 - 학습 전후 노드 임베딩과 커뮤니티 구조 관찰
+- epoch별 임베딩 기록을 이용한 애니메이션 생성 및 GIF 저장
 
 ## 데이터셋
 
@@ -37,7 +38,7 @@
 
 ## 실행 환경 및 설치
 
-노트북 메타데이터에는 Python `3.10.21`, 커널 표시 이름 `ai_tutorial`이 기록되어 있습니다. 패키지 버전은 고정되어 있지 않습니다. 주요 의존성은 `torch`, `torch_geometric`, `networkx`, `matplotlib`, `IPython`이며, 실행을 위해 Jupyter와 Python 커널이 필요합니다.
+노트북 메타데이터에는 Python `3.10.21`, 커널 표시 이름 `ai_tutorial`이 기록되어 있습니다. 패키지 버전은 고정되어 있지 않습니다. 주요 의존성은 `torch`, `torch_geometric`, `networkx`, `matplotlib`, `IPython`, `Pillow`이며, 실행을 위해 Jupyter와 Python 커널이 필요합니다.
 
 Conda를 사용하는 경우 아래 명령으로 환경을 준비할 수 있습니다.
 
@@ -45,7 +46,7 @@ Conda를 사용하는 경우 아래 명령으로 환경을 준비할 수 있습�
 conda create -n ai_tutorial python=3.10 -y
 conda activate ai_tutorial
 python -m pip install torch
-python -m pip install torch_geometric networkx matplotlib jupyterlab ipykernel
+python -m pip install torch_geometric networkx matplotlib pillow jupyterlab ipykernel
 python -m ipykernel install --user --name ai_tutorial --display-name ai_tutorial
 ```
 
@@ -66,7 +67,8 @@ VS Code에서도 노트북을 열고 같은 환경의 Python 커널을 선택한
 3. **그래프 시각화**: `to_networkx(data, to_undirected=True)`로 변환한 그래프를 정답 커뮤니티별 색으로 표시합니다.
 4. **GCN 모델 정의**: 세 개의 그래프 합성곱 계층과 선형 분류기를 구성합니다.
 5. **학습 전 임베딩 확인**: 초기 모델이 생성한 `[34, 2]` 임베딩을 시각화합니다.
-6. **학습 및 시각화**: 마스크로 선택한 노드의 손실을 최소화하면서 10회마다 임베딩을 표시합니다.
+6. **학습 기록 저장**: 마스크로 선택한 노드의 손실을 최소화하면서 매 epoch의 임베딩 좌표, 반복 번호, 손실을 저장합니다.
+7. **애니메이션 생성 및 저장**: `FuncAnimation`으로 산점도의 위치와 학습 정보를 갱신하고, `PillowWriter`로 GIF를 저장한 뒤 노트북에 재생 컨트롤을 표시합니다.
 
 ## 모델 구조
 
@@ -92,8 +94,11 @@ VS Code에서도 노트북을 열고 같은 환경의 Python 커널을 선택한
 | 최적화 알고리즘 | `torch.optim.Adam` |
 | 학습률 | `0.01` |
 | 학습 반복 | `range(401)`: 0~400, 총 401회 |
-| 시각화 주기 | `epoch % 10 == 0`: 총 41회 |
-| 시각화 후 대기 | `time.sleep(0.3)` |
+| 임베딩 기록 주기 | `epoch % 1 == 0`: 매 epoch, 총 401프레임 |
+| 애니메이션 재생 속도 | `fps = 50`: 프레임당 0.02초, 한 번 재생에 약 8.02초 |
+| 프레임 전환 간격 | `interval=1000 / fps`: 20ms |
+| GIF 저장 경로 | 현재 작업 디렉터리 기준 `./results/karate_club_embedding.gif` |
+| 저장 해상도 | `figsize=(7, 7)`, `dpi=100`: 700 × 700px |
 
 반지도 학습을 구현하는 핵심 코드는 다음과 같습니다.
 
@@ -104,12 +109,41 @@ loss = criterion(out[data.train_mask], data.y[data.train_mask])
 
 전체 그래프를 통과해 모든 노드의 출력을 계산하지만, 손실은 `train_mask`가 선택한 4개 노드에 대해서만 계산합니다. 이후 `loss.backward()`와 `optimizer.step()`으로 모델 파라미터를 갱신합니다.
 
+## 임베딩 애니메이션
+
+학습 셀은 기존의 개별 그림 출력과 `time.sleep(0.3)` 대신 다음 기록을 누적합니다.
+
+```python
+embedding_history.append(h.detach().cpu().numpy().copy())
+epoch_history.append(epoch)
+loss_history.append(loss.item())
+```
+
+`detach()`로 학습 그래프에서 분리하고, CPU의 NumPy 배열을 복사해 각 시점의 좌표를 독립적으로 보관합니다. 다음 셀의 `update(frame)`은 `scatter.set_offsets()`로 노드 위치를 바꾸고 epoch와 손실을 갱신합니다. 저장된 좌표를 재생하므로 애니메이션 생성 중에 추가로 학습하지 않습니다.
+
+마지막 임베딩에 `tanh`가 적용되어 좌표는 `[-1, 1]` 범위에 있습니다. 애니메이션은 양쪽 축을 `[-1.1, 1.1]`로 고정하고 같은 축척을 사용하므로, 프레임마다 화면 크기가 바뀌지 않고 노드 이동을 비교할 수 있습니다.
+
+```python
+save_path = Path("./results/karate_club_embedding.gif")
+ani.save(str(save_path), writer=PillowWriter(fps=fps), dpi=100)
+plt.close(fig)
+display(HTML(ani.to_jshtml(fps=fps)))
+```
+
+GIF는 `PillowWriter`로 저장하며, 노트북에는 `to_jshtml()`을 통한 재생 컨트롤이 표시됩니다. `plt.close(fig)`는 별도의 정적 그림이 함께 출력되지 않도록 합니다.
+
+저장된 결과: [GIF 다운로드](./results/karate_club_embedding.gif)
+
+![Karate Club GCN 학습 중 임베딩 변화](./results/karate_club_embedding.gif)
+
+재생 속도는 애니메이션 셀의 `fps` 값으로 조절합니다. 기록 주기를 10 epoch로 바꾸려면 학습 셀의 조건을 `epoch % 10 == 0`으로 변경하세요. 이 경우 41프레임이 기록되며, `fps=4`이면 한 번 재생에 약 10.25초가 걸립니다. 기록 주기를 바꾼 후에는 `model = GCN()`을 포함한 학습 셀 전체를 다시 실행한 뒤 애니메이션 셀을 실행하세요.
+
 ## 출력 해석
 
 - 데이터 통계와 특징·레이블·간선 텐서가 출력됩니다.
 - 그래프 그림에서 노드 색은 정답 커뮤니티를 나타냅니다.
 - 학습 전 임베딩의 형태는 `[34, 2]`입니다.
-- 학습 중 산점도에는 반복 번호와 학습 손실이 표시됩니다. 같은 커뮤니티 노드가 임베딩 공간에서 어떻게 모이는지 관찰할 수 있습니다.
+- 학습 종료 후 표시되는 애니메이션의 산점도에는 반복 번호와 학습 손실이 표시됩니다. 같은 커뮤니티 노드가 임베딩 공간에서 어떻게 모이는지 관찰할 수 있습니다.
 
 임베딩 산점도의 색도 `data.y`에 따른 **정답 레이블**입니다. 예측 클래스의 색을 표시한 그림은 아닙니다. 현재 코드에는 별도의 검증·테스트 마스크, 정확도 계산, 모델 저장이 없으므로 시각화만으로 분류 성능을 수치적으로 판단할 수는 없습니다.
 
@@ -119,7 +153,10 @@ loss = criterion(out[data.train_mask], data.y[data.train_mask])
 
 - `ModuleNotFoundError`가 발생하면 선택한 노트북 커널과 패키지를 설치한 환경이 같은지 확인하세요.
 - 저장된 출력에는 `IProgress not found` 경고가 있습니다. 이 경고가 나타나면 같은 환경에 `python -m pip install ipywidgets`로 설치한 뒤 커널을 재시작할 수 있습니다.
-- 학습 셀은 41개의 그림을 출력합니다. 출력량을 줄이려면 시각화 주기를 늘릴 수 있습니다.
+- GIF 저장 경로는 커널의 현재 작업 디렉터리를 기준으로 합니다. 저장 전에 `results` 폴더가 있는지 확인하세요. 폴더가 없으면 저장 호출 앞에 `save_path.parent.mkdir(parents=True, exist_ok=True)`를 추가할 수 있습니다.
+- `Pillow`가 없으면 같은 커널에서 `%pip install pillow`를 실행하세요. GIF 저장에는 FFmpeg가 필요하지 않습니다.
+- 노트북의 `fps = 50` 옆 주석에는 이전 설정인 4fps 설명이 남아 있습니다. 실제 재생 속도는 코드 값인 50fps입니다.
+- HTML 애니메이션은 프레임 이미지를 출력에 포함하므로 저장된 노트북 크기가 커질 수 있습니다. `animation.embed_limit` 경고가 나타나면 기록 주기를 늘리거나 `figsize`를 줄여 프레임 수 또는 크기를 줄일 수 있습니다.
 - 패키지 버전이 고정되어 있지 않아 실행 환경에 따라 손실이나 그림이 달라질 수 있습니다.
 
 ## 참고 자료
@@ -127,4 +164,5 @@ loss = criterion(out[data.train_mask], data.y[data.train_mask])
 - [PyTorch Geometric 설치 안내](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
 - [KarateClub 데이터셋 문서](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.datasets.KarateClub.html)
 - [GCNConv 문서](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GCNConv.html)
+- [Matplotlib 애니메이션 안내](https://matplotlib.org/stable/users/explain/animations/animations.html)
 - [Kipf & Welling, Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/abs/1609.02907)
