@@ -1,0 +1,130 @@
+# Karate Club GCN 튜토리얼
+
+[Karate_club_gcn.ipynb](./Karate_club_gcn.ipynb)는 PyTorch와 PyTorch Geometric(PyG)을 사용해 그래프 신경망의 기본 원리를 실습하는 노트북입니다. Karate Club 소셜 네트워크에서 일부 노드의 커뮤니티 레이블만으로 GCN(Graph Convolutional Network)을 학습하고, 노드의 2차원 임베딩이 어떻게 변화하는지 시각화합니다.
+
+## 학습 목표
+
+- PyG의 `Data` 객체와 그래프 연결 정보인 `edge_index` 이해
+- `GCNConv`를 이용한 그래프 합성곱 모델 구현
+- 학습 노드에만 손실을 적용하는 반지도 학습 이해
+- 학습 전후 노드 임베딩과 커뮤니티 구조 관찰
+
+## 데이터셋
+
+노트북은 `torch_geometric.datasets.KarateClub()`으로 그래프를 불러옵니다. 별도의 데이터 파일을 준비할 필요는 없습니다. 아래 값은 노트북에 저장된 출력 기준입니다.
+
+| 항목 | 값 / 설명 |
+| --- | --- |
+| 그래프 수 | 1 |
+| 노드 수 | 34명 |
+| 무방향 연결 수 | 78개 |
+| `edge_index`에 저장된 간선 수 | 156개: 각 무방향 연결을 양방향으로 저장 |
+| 노드 특징 | 34차원 원-핫 벡터 |
+| 커뮤니티 클래스 수 | 4 |
+| 학습 노드 수 | 4개: 클래스당 1개 |
+| 평균 차수 | 약 4.59 |
+
+주요 데이터 속성은 다음과 같습니다.
+
+| 속성 | 형태 | 역할 |
+| --- | --- | --- |
+| `data.x` | `[34, 34]` | 노드 특징 행렬; 이 예제에서는 단위 행렬 |
+| `data.edge_index` | `[2, 156]` | 각 열에 출발·도착 노드 번호를 저장하는 COO 형식 |
+| `data.y` | `[34]` | 각 노드의 커뮤니티 레이블(0~3) |
+| `data.train_mask` | `[34]` | 손실 계산에 사용할 노드를 선택하는 불리언 마스크 |
+
+전체 노드의 특징과 그래프 연결을 사용하되, 4개 노드의 레이블만 학습에 사용합니다. 따라서 이미 주어진 그래프의 나머지 노드를 분류하는 **반지도·전이적(transductive) 노드 분류** 예제입니다.
+
+## 실행 환경 및 설치
+
+노트북 메타데이터에는 Python `3.10.21`, 커널 표시 이름 `ai_tutorial`이 기록되어 있습니다. 패키지 버전은 고정되어 있지 않습니다. 주요 의존성은 `torch`, `torch_geometric`, `networkx`, `matplotlib`, `IPython`이며, 실행을 위해 Jupyter와 Python 커널이 필요합니다.
+
+Conda를 사용하는 경우 아래 명령으로 환경을 준비할 수 있습니다.
+
+```powershell
+conda create -n ai_tutorial python=3.10 -y
+conda activate ai_tutorial
+python -m pip install torch
+python -m pip install torch_geometric networkx matplotlib jupyterlab ipykernel
+python -m ipykernel install --user --name ai_tutorial --display-name ai_tutorial
+```
+
+PyG의 기본 사용은 PyTorch 설치 후 `pip install torch_geometric`으로 시작할 수 있습니다. 추가 확장 패키지 설치는 [PyG 공식 설치 문서](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)를 참고하세요. 현재 노트북에는 GPU로 모델과 데이터를 이동하는 코드가 없으며 CPU에서 실행합니다.
+
+## 실행 방법
+
+1. 위에서 준비한 `ai_tutorial` 환경을 활성화합니다.
+2. 이 폴더에서 `python -m jupyterlab`을 실행하고 `Karate_club_gcn.ipynb`를 엽니다.
+3. 커널을 `ai_tutorial`로 선택하고 위에서 아래로 모든 셀을 실행합니다.
+
+VS Code에서도 노트북을 열고 같은 환경의 Python 커널을 선택한 뒤 **Run All**을 사용할 수 있습니다. `%matplotlib inline`이 포함되어 있으므로 Jupyter/IPython 노트북 환경에서 실행하세요.
+
+## 코드 흐름
+
+1. **시각화 함수 정의**: `visualize_graph()`는 NetworkX 그래프를, `visualize_embedding()`은 2차원 노드 임베딩을 그립니다.
+2. **데이터 탐색**: 그래프 수, 특징 수, 클래스 수와 `Data` 속성 및 `edge_index`를 확인합니다.
+3. **그래프 시각화**: `to_networkx(data, to_undirected=True)`로 변환한 그래프를 정답 커뮤니티별 색으로 표시합니다.
+4. **GCN 모델 정의**: 세 개의 그래프 합성곱 계층과 선형 분류기를 구성합니다.
+5. **학습 전 임베딩 확인**: 초기 모델이 생성한 `[34, 2]` 임베딩을 시각화합니다.
+6. **학습 및 시각화**: 마스크로 선택한 노드의 손실을 최소화하면서 10회마다 임베딩을 표시합니다.
+
+## 모델 구조
+
+```text
+노드 특징 [34, 34] + 그래프 연결 [2, 156]
+    → GCNConv(34, 4) → tanh
+    → GCNConv(4, 4)  → tanh
+    → GCNConv(4, 2)  → tanh
+    → 2차원 임베딩 h [34, 2]
+    → Linear(2, 4)
+    → 클래스별 로짓 out [34, 4]
+```
+
+각 `GCNConv`는 이웃 노드의 특징을 집계합니다. 세 계층을 거치면서 최대 3-hop 이웃 정보를 반영하고, 특징 차원을 `34 → 4 → 4 → 2`로 줄입니다. `forward()`는 분류 결과인 `out`과 시각화용 임베딩 `h`를 함께 반환합니다. `out`은 확률 변환 전의 로짓이며 `CrossEntropyLoss`에 그대로 전달합니다.
+
+모델 생성 시 `torch.manual_seed(1234)`를 설정하고, 그래프 배치에는 `nx.spring_layout(..., seed=42)`를 사용합니다.
+
+## 학습 설정
+
+| 항목 | 설정 |
+| --- | --- |
+| 손실 함수 | `torch.nn.CrossEntropyLoss()` |
+| 최적화 알고리즘 | `torch.optim.Adam` |
+| 학습률 | `0.01` |
+| 학습 반복 | `range(401)`: 0~400, 총 401회 |
+| 시각화 주기 | `epoch % 10 == 0`: 총 41회 |
+| 시각화 후 대기 | `time.sleep(0.3)` |
+
+반지도 학습을 구현하는 핵심 코드는 다음과 같습니다.
+
+```python
+out, h = model(data.x, data.edge_index)
+loss = criterion(out[data.train_mask], data.y[data.train_mask])
+```
+
+전체 그래프를 통과해 모든 노드의 출력을 계산하지만, 손실은 `train_mask`가 선택한 4개 노드에 대해서만 계산합니다. 이후 `loss.backward()`와 `optimizer.step()`으로 모델 파라미터를 갱신합니다.
+
+## 출력 해석
+
+- 데이터 통계와 특징·레이블·간선 텐서가 출력됩니다.
+- 그래프 그림에서 노드 색은 정답 커뮤니티를 나타냅니다.
+- 학습 전 임베딩의 형태는 `[34, 2]`입니다.
+- 학습 중 산점도에는 반복 번호와 학습 손실이 표시됩니다. 같은 커뮤니티 노드가 임베딩 공간에서 어떻게 모이는지 관찰할 수 있습니다.
+
+임베딩 산점도의 색도 `data.y`에 따른 **정답 레이블**입니다. 예측 클래스의 색을 표시한 그림은 아닙니다. 현재 코드에는 별도의 검증·테스트 마스크, 정확도 계산, 모델 저장이 없으므로 시각화만으로 분류 성능을 수치적으로 판단할 수는 없습니다.
+
+또한 학습 함수가 반환하는 `h`는 해당 반복에서 파라미터를 갱신하기 **전** 순전파로 계산한 임베딩입니다. 최종 갱신 후 임베딩이 필요하면 학습 종료 후 모델을 다시 호출해야 합니다.
+
+## 실행 시 참고
+
+- `ModuleNotFoundError`가 발생하면 선택한 노트북 커널과 패키지를 설치한 환경이 같은지 확인하세요.
+- 저장된 출력에는 `IProgress not found` 경고가 있습니다. 이 경고가 나타나면 같은 환경에 `python -m pip install ipywidgets`로 설치한 뒤 커널을 재시작할 수 있습니다.
+- 학습 셀은 41개의 그림을 출력합니다. 출력량을 줄이려면 시각화 주기를 늘릴 수 있습니다.
+- 패키지 버전이 고정되어 있지 않아 실행 환경에 따라 손실이나 그림이 달라질 수 있습니다.
+
+## 참고 자료
+
+- [PyTorch Geometric 설치 안내](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
+- [KarateClub 데이터셋 문서](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.datasets.KarateClub.html)
+- [GCNConv 문서](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GCNConv.html)
+- [Kipf & Welling, Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/abs/1609.02907)
