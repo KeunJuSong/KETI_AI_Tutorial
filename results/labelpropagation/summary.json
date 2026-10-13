@@ -1,0 +1,168 @@
+{
+  "baseline": "LabelPropagation",
+  "seeds": [
+    1234,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "epochs": 401,
+  "lr": 0.01,
+  "train_nodes": [
+    0,
+    4,
+    8,
+    24
+  ],
+  "test_nodes": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33
+  ],
+  "versions": {
+    "python": "3.10.21",
+    "torch": "2.12.0+cpu",
+    "torch_geometric": "2.8.0.post1"
+  },
+  "baseline_config": {
+    "num_layers": 100,
+    "alpha": 0.9,
+    "normalization": "symmetric",
+    "hard_clamping": false
+  },
+  "summary": [
+    {
+      "model": "GCN",
+      "runs": 10,
+      "train_accuracy_mean": 1.0,
+      "train_accuracy_sd": 0.0,
+      "test_accuracy_mean": 0.6599999994039536,
+      "test_accuracy_sd": 0.1412466554903227,
+      "test_macro_f1_mean": 0.6457695215940475,
+      "test_macro_f1_sd": 0.1530287048216754,
+      "seconds_mean": 0.5544711000286042,
+      "seconds_sd": 0.04733496448860317,
+      "parameters": 182
+    },
+    {
+      "model": "LabelPropagation",
+      "runs": 1,
+      "train_accuracy_mean": 1.0,
+      "train_accuracy_sd": 0.0,
+      "test_accuracy_mean": 0.699999988079071,
+      "test_accuracy_sd": 0.0,
+      "test_macro_f1_mean": 0.5325123071670532,
+      "test_macro_f1_sd": 0.0,
+      "seconds_mean": 0.006285900017246604,
+      "seconds_sd": 0.0,
+      "parameters": 0
+    }
+  ],
+  "test_reports_seed1234": {
+    "GCN": {
+      "accuracy": 0.800000011920929,
+      "macro_f1": 0.807539701461792,
+      "confusion_matrix": [
+        [
+          11,
+          0,
+          1,
+          0
+        ],
+        [
+          4,
+          7,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          4
+        ]
+      ],
+      "per_class_f1": [
+        0.7857142686843872,
+        0.7777777910232544,
+        0.6666666865348816,
+        1.0
+      ]
+    },
+    "LabelPropagation": {
+      "accuracy": 0.699999988079071,
+      "macro_f1": 0.5325123071670532,
+      "confusion_matrix": [
+        [
+          8,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          11,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          4,
+          0,
+          0
+        ]
+      ],
+      "per_class_f1": [
+        0.800000011920929,
+        0.7586206793785095,
+        0.5714285969734192,
+        0.0
+      ]
+    }
+  }
+}

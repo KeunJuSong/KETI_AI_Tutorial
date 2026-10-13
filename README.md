@@ -159,6 +159,21 @@ GIF는 `PillowWriter`로 저장하며, 노트북에는 `to_jshtml()`을 통한 �
 - HTML 애니메이션은 프레임 이미지를 출력에 포함하므로 저장된 노트북 크기가 커질 수 있습니다. `animation.embed_limit` 경고가 나타나면 기록 주기를 늘리거나 `figsize`를 줄여 프레임 수 또는 크기를 줄일 수 있습니다.
 - 패키지 버전이 고정되어 있지 않아 실행 환경에 따라 손실이나 그림이 달라질 수 있습니다.
 
+## 성능 비교 노트북
+
+다음 두 노트북은 원본 GCN과 같은 데이터 및 학습 노드로 비교군을 평가합니다. 각 노트북에 원본과 동일한 구조의 GCN이 포함되어 있어 독립 실행할 수 있습니다.
+
+| 노트북 | 비교군 | 사용 정보 |
+| --- | --- | --- |
+| [Karate_club_mlp.ipynb](./Karate_club_mlp.ipynb) | MLP: GCNConv를 Linear로 교체, 층 크기 및 tanh 유지 | 노드 특징만 사용 |
+| [Karate_club_labelpropagation.ipynb](./Karate_club_labelpropagation.ipynb) | PyG LabelPropagation: alpha=0.9, 전파 100회 | 그래프 연결과 학습 노드 레이블 |
+
+기존 `ai_tutorial` 커널에서 위에서 아래로 모두 실행하세요. 추가 패키지 설치는 필요하지 않습니다. GCN과 MLP는 Adam(lr=0.01)으로 401회 갱신하고, 기본 `train_mask`의 4개 노드만 학습에 사용합니다. 나머지 30개 노드에서 **Accuracy와 Macro-F1**을 계산합니다. LabelPropagation 입력은 학습 노드만 one-hot이며, 평가 노드의 정답은 전파에 사용하지 않습니다.
+
+GCN과 MLP는 고정된 데이터 분할에서 초기화 시드 10개로 평균과 표본 표준편차를 보고합니다. 결정적인 LabelPropagation은 1회 실행합니다. 검증 집합이나 조기 종료 없이 미리 정한 설정과 마지막 모델을 평가하며, 이 결과로 테스트 집합에 맞춰 설정을 선택하지 않도록 합니다. KarateClub의 특징은 노드 ID를 나타내는 단위 행렬이므로, 특징만 사용하는 MLP의 미관측 노드 성능을 해석할 때 이 제약을 고려해야 합니다.
+
+노트북에는 혼동 행렬, 정답/예측 그래프 및 추가 시각화가 포함됩니다. 실행 결과는 `results/mlp/`와 `results/labelpropagation/`에 저장합니다. 각각 `metrics.csv`(실행별 지표), `predictions_seed1234.csv`(대표 시드의 노드별 예측), `summary.json`(설정·버전·평균 성능)을 생성합니다. 재실행하면 해당 파일을 갱신합니다.
+
 ## 참고 자료
 
 - [PyTorch Geometric 설치 안내](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
