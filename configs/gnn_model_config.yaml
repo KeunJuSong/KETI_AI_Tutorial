@@ -14,3 +14,7 @@ models:
     num_layers: 3
     aggr: "mean"
     dropout: 0.1
+  DNN:
+    hidden_channels: 512
+    num_layers: 3
+    dropout: 0.1

@@ -1,23 +1,23 @@
 # Karate Club GNN 튜토리얼과 W&B Sweep
 
-PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다. 현재 코드와 설정을 기준으로 2026-10-15에 점검했습니다.
+PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다. 현재 코드와 설정을 기준으로 2026-10-15에 점검했으며 DNN 기준 모델과 전용 Sweep 구성을 반영했습니다.
 
 ## 파일 구성
 
 | 파일 | 역할 |
 | --- | --- |
 | [Karate_club_gcn_tutorial.ipynb](./Karate_club_gcn_tutorial.ipynb) | 데이터 탐색, 2차원 임베딩, 학습, 미학습 노드 평가, GIF 생성 |
-| [wandb_sweep_Karate_club_gnn.py](./wandb_sweep_Karate_club_gnn.py) | GCN·GAT·GraphSAGE 단일 학습과 W&B Sweep |
+| [wandb_sweep_Karate_club_gnn.py](./wandb_sweep_Karate_club_gnn.py) | GCN·GAT·GraphSAGE·DNN 단일 학습과 W&B Sweep |
 | [Karate_club_gnn_sweep_validation.ipynb](./Karate_club_gnn_sweep_validation.ipynb) | 선택한 Sweep 설정으로 재학습하고 미학습 노드를 평가 |
-| [utils/model.py](./utils/model.py) | GCN, GAT, GraphSAGE 모델 |
+| [utils/model.py](./utils/model.py) | GCN, GAT, GraphSAGE와 DNN 기준 모델 |
 | [utils/wandb.py](./utils/wandb.py) | YAML 로드, Sweep 설정 적용, 실행 이름 및 체크포인트 경로 처리 |
 | [configs/config.yaml](./configs/config.yaml) | 최적화, 학습, 로그 및 체크포인트 기본 설정 |
 | [configs/gnn_model_config.yaml](./configs/gnn_model_config.yaml) | 모델 기본 설정 |
-| [configs/sweeps/gcn_config.yaml](./configs/sweeps/gcn_config.yaml), [gat_config.yaml](./configs/sweeps/gat_config.yaml), [graphsage_config.yaml](./configs/sweeps/graphsage_config.yaml) | 모델별 Sweep 명령과 탐색 범위 |
+| [configs/sweeps/gcn_config.yaml](./configs/sweeps/gcn_config.yaml), [gat_config.yaml](./configs/sweeps/gat_config.yaml), [graphsage_config.yaml](./configs/sweeps/graphsage_config.yaml), [dnn_config.yaml](./configs/sweeps/dnn_config.yaml) | 모델별 Sweep 명령과 탐색 범위 |
 | [requirements-sweep.txt](./requirements-sweep.txt) | 학습 및 Sweep 의존성 |
 | [launch_gnn.sh](./launch_gnn.sh), [launch_sweep.sh](./launch_sweep.sh) | Bash 실행 도우미 |
 | [wanb_sweeps.md](./wanb_sweeps.md) | 상세 Sweep 실행 안내 |
-| [loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb) | 기본 GCN·튜닝 GCN 및 GAT·GraphSAGE 학습 손실 비교 |
+| [loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb) | 기본·튜닝 GCN, DNN·GCN 및 GAT·GraphSAGE 학습 손실 비교 |
 
 기존 `Karate_club_gcn.ipynb`는 `Karate_club_gcn_tutorial.ipynb`로 이름이 변경되었습니다. 현재 공통 스크립트는 `wandb_sweep_Karate_club_gnn.py`, 모델 설정은 `configs/gnn_model_config.yaml`, 재학습 노트북은 `Karate_club_gnn_sweep_validation.ipynb`입니다.
 
@@ -99,18 +99,21 @@ loss = criterion(out[data.train_mask], data.y[data.train_mask])
 ```powershell
 python wandb_sweep_Karate_club_gnn.py
 python wandb_sweep_Karate_club_gnn.py --wandb --wandb_mode offline
+# 그래프 연결을 사용하지 않는 기준 모델
+python wandb_sweep_Karate_club_gnn.py --model_type DNN
 # 온라인 기록: 최초 로그인 후 실행
 wandb login
 python wandb_sweep_Karate_club_gnn.py --wandb --wandb_entity kjsong
 ```
 
-`--model_type GCN`, `GAT`, `GraphSAGE`를 지원합니다. 세 모델은 모든 합성곱 계층에 같은 hidden 차원, ReLU와 dropout을 적용하고 로짓만 반환합니다. GAT는 `concat=False`로 attention head를 결합하고 GraphSAGE는 `aggr`로 이웃 집계 방법을 선택합니다. 입문 노트북의 2차원 임베딩 모델과 구조가 다릅니다.
+`--model_type GCN`, `GAT`, `GraphSAGE`, `DNN`을 지원합니다. GNN 세 모델은 모든 합성곱 계층에 같은 hidden 차원, ReLU와 dropout을 적용하고 로짓만 반환합니다. GAT는 `concat=False`로 attention head를 결합하고 GraphSAGE는 `aggr`로 이웃 집계 방법을 선택합니다. 입문 노트북의 2차원 임베딩 모델과 구조가 다릅니다. DNN은 GCN 계층 대신 Linear 계층을 쌓고 ReLU·dropout·선형 분류기를 사용합니다. 공통 호출을 위해 `edge_index` 인자를 받지만 사용하지 않고 노드 특징만 처리합니다.
 
 | 모델 | 기본 hidden 차원 | 계층 수 | dropout | 추가 설정 |
 | --- | --- | --- | --- | --- |
 | GCN | 32 | 2 | 0.1 | — |
 | GAT | 512 | 3 | 0.1 | `heads=4` |
 | GraphSAGE | 512 | 3 | 0.1 | `aggr="mean"` |
+| DNN | 512 | 3 | 0.1 | 그래프 연결 미사용 |
 
 | 항목 | 기본 설정 |
 | --- | --- |
@@ -127,10 +130,10 @@ python wandb_sweep_Karate_club_gnn.py --wandb --wandb_entity kjsong
 `configs/config.yaml`의 로그·체크포인트 경로는 현재 KETI PC의 절대 경로입니다. 다른 PC에서는 먼저 `logging_dir: "logs"`, `checkpoint_dir: "checkpoints"` 등으로 변경하세요.
 
 - W&B 없이 실행하면 기본 체크포인트 디렉터리의 `best.pt`를 사용해 이전 파일을 덮어쓸 수 있습니다.
-- W&B 실행 시 기본 이름은 `<MODEL>-<run_id>`이고 경로는 `checkpoints/<MODEL>-<run_id>-<run_id>/best.pt`입니다. `<MODEL>`은 `GCN`, `GAT`, `GraphSAGE` 중 선택한 모델입니다. `--wandb_run_name NAME`이면 `checkpoints/NAME-<run_id>/best.pt`입니다.
+- W&B 실행 시 기본 이름은 `<MODEL>-<run_id>`이고 경로는 `checkpoints/<MODEL>-<run_id>-<run_id>/best.pt`입니다. `<MODEL>`은 `GCN`, `GAT`, `GraphSAGE`, `DNN` 중 선택한 모델입니다. `--wandb_run_name NAME`이면 `checkpoints/NAME-<run_id>/best.pt`입니다.
 - W&B 실행 로그는 `logging_dir` 아래 `wandb/`에 저장됩니다. Sweep agent 설정 파일은 프로젝트 루트의 `wandb/`에도 생성될 수 있습니다.
 
-YAML의 `max_global_samples`, `global_batch_size`, `score_alpha`, `accumulate_grad_batches`, `log_every_n_steps`, `log_every_n_samples`, `val_*`, `throughput_enabled`, `log_normalized_violation`은 현재 학습 루프에서 사용하지 않습니다. `checkpointing.monitor`, `save_last`, 저장 주기 설정도 반영되지 않으며 개선 시 `best.pt`만 저장합니다. `checkpointing.run_scoped`는 경로 처리에 사용되고 생략 시 `true`입니다. 현재 모델 YAML의 GCN·GAT·GraphSAGE 설정은 해당 `--model_type` 선택 시 사용됩니다.
+YAML의 `max_global_samples`, `global_batch_size`, `score_alpha`, `accumulate_grad_batches`, `log_every_n_steps`, `log_every_n_samples`, `val_*`, `throughput_enabled`, `log_normalized_violation`은 현재 학습 루프에서 사용하지 않습니다. `checkpointing.monitor`, `save_last`, 저장 주기 설정도 반영되지 않으며 개선 시 `best.pt`만 저장합니다. `checkpointing.run_scoped`는 경로 처리에 사용되고 생략 시 `true`입니다. 현재 모델 YAML의 GCN·GAT·GraphSAGE·DNN 설정은 해당 `--model_type` 선택 시 사용됩니다.
 
 ## W&B Sweep과 설정 재평가
 
@@ -142,11 +145,11 @@ python -m wandb agent --count 1 kjsong/karate-club-gcn-sweep/SWEEP_ID
 
 현재 Sweep은 Bayesian 탐색으로 학습 손실을 최소화합니다. Windows에서 Python을 직접 실행하므로 Bash는 필요하지 않습니다. 탐색 범위와 Hyperband, 평가 노트북 사용법은 [Sweep 안내](./wanb_sweeps.md)를 참고하세요.
 
-`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다. 첫 설정 셀의 `path`를 실제 파일로 변경해야 합니다. 현재 GraphSAGE가 선택되어 있으며, GCN·GAT를 평가하려면 설정 파일 경로와 모델 생성 셀의 주석을 함께 전환하세요. `best.pt`를 복원하지 않으며 seed는 42(스크립트 기본값은 0), gradient clip 값은 반올림 없이 사용합니다. patience 없이 500 epoch를 학습하고 `loss_history`에 업데이트 전 학습 손실을 기록합니다. 따라서 기존 Sweep 가중치나 결과를 그대로 재현하는 과정은 아닙니다.
+`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다. 첫 설정 셀의 `path`를 실제 파일로 변경해야 합니다. 현재 DNN이 선택되어 있으며, GCN·GAT·GraphSAGE를 평가하려면 설정 파일 경로와 모델 생성 셀의 주석을 함께 전환하세요. `best.pt`를 복원하지 않으며 seed는 42(스크립트 기본값은 0), gradient clip 값은 반올림 없이 사용합니다. patience 없이 500 epoch를 학습하고 `loss_history`에 업데이트 전 학습 손실을 기록합니다. 따라서 기존 Sweep 가중치나 결과를 그대로 재현하는 과정은 아닙니다.
 
 ## 손실 곡선 비교
 
-[loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb)는 저장된 NumPy 배열로 기본 GCN과 튜닝 GCN, 튜닝한 GCN·GAT·GraphSAGE의 학습 손실을 비교합니다.
+[loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb)는 저장된 NumPy 배열로 기본 GCN과 튜닝 GCN, 튜닝한 DNN과 GCN, 튜닝한 GCN·GAT·GraphSAGE의 학습 손실을 세 그래프로 비교합니다.
 
 ```powershell
 conda activate ai_tutorial
@@ -154,7 +157,7 @@ Set-Location loss_curve_vis
 python -m jupyterlab
 ```
 
-노트북은 `./data/`를 상대 경로로 읽으므로 커널의 작업 디렉터리를 `loss_curve_vis`로 맞추세요. `data/`의 `gcn_train_loss_basic.npy`, `gcn_train_loss_hpt.npy`, `gat_train_loss_hpt.npy`, `graphsage_train_loss_hpt.npy`가 필요하며 현재 각 배열에는 500 epoch의 기록이 있습니다. 비교 노트북은 파일명에 따라 기본·튜닝 모델의 기록으로 표시합니다. 배열 자체에는 seed나 설정 메타데이터가 없으므로 엄밀한 동일 조건 비교로 해석하지 마세요.
+노트북은 `./data/`를 상대 경로로 읽으므로 커널의 작업 디렉터리를 `loss_curve_vis`로 맞추세요. `data/`의 `gcn_train_loss_basic.npy`, `gcn_train_loss_hpt.npy`, `gat_train_loss_hpt.npy`, `graphsage_train_loss_hpt.npy`, `dnn_train_loss_hpt.npy`가 필요하며 현재 각 배열에는 500 epoch의 기록이 있습니다. 비교 노트북은 파일명에 따라 기본·튜닝 모델의 기록으로 표시합니다. 배열 자체에는 seed나 설정 메타데이터가 없으므로 엄밀한 동일 조건 비교로 해석하지 마세요.
 
 두 학습 노트북의 `np.save` 예제는 현재 주석 처리되어 있습니다. 새 곡선을 저장하려면 NumPy import와 저장 코드를 활성화하고 실제 대상 경로를 `loss_curve_vis/data/` 아래로 지정하세요. 저장된 비교 데이터는 저장소에 포함되며 자동 갱신되지 않습니다.
 

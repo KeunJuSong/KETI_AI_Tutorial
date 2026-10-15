@@ -25,20 +25,22 @@ python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sw
 
 현재 명령은 `${env}`, `${interpreter}`, `${program}`으로 `wandb_sweep_Karate_club_gnn.py`를 직접 실행합니다. dotted key 파라미터는 `wandb.init()` 후 `wandb.config`에서 읽고 `utils/wandb.py`가 중첩 YAML 설정에 적용합니다. 파서가 받지 않는 dotted key를 CLI에 전달하지 않도록 `${args}`는 생략되어 있습니다.
 
-등록할 YAML은 모델에 따라 선택합니다. 세 모델 모두 현재 W&B 프로젝트 `karate-club-gcn-sweep`을 사용합니다.
+등록할 YAML은 모델에 따라 선택합니다. 네 모델 모두 현재 W&B 프로젝트 `karate-club-gcn-sweep`을 사용합니다.
 
 | 모델 | 등록할 설정 | CLI 모델명 |
 | --- | --- | --- |
 | GCN | `configs/sweeps/gcn_config.yaml` | `GCN` |
 | GAT | `configs/sweeps/gat_config.yaml` | `GAT` |
 | GraphSAGE | `configs/sweeps/graphsage_config.yaml` | `GraphSAGE` |
+| DNN | `configs/sweeps/dnn_config.yaml` | `DNN` |
 
 ```powershell
 python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sweeps/gat_config.yaml
 python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sweeps/graphsage_config.yaml
+python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sweeps/dnn_config.yaml
 ```
 
-공통 모델 기본값은 `configs/gnn_model_config.yaml`에 있습니다. 각 Sweep은 동일한 공통 스크립트에 해당 `--model_type`을 전달합니다.
+공통 모델 기본값은 `configs/gnn_model_config.yaml`에 있습니다. DNN은 Linear 계층을 사용하며 `edge_index`를 학습에 사용하지 않는 기준 모델입니다. 기본 hidden 차원 512, 계층 수 3, dropout 0.1이고, Sweep에서는 `models.DNN.*` 키로 같은 범위를 탐색합니다. 각 Sweep은 동일한 공통 스크립트에 해당 `--model_type`을 전달합니다.
 
 ## 3. Agent 실행
 
@@ -79,7 +81,7 @@ Hyperband는 `min_iter: 500`입니다. 스크립트는 매 epoch 최적화 지�
 
 최적화 지표는 학습 노드 4개의 손실입니다. Sweep 스크립트는 검증/테스트 손실·정확도를 계산하지 않으므로 선택한 설정이 미학습 노드 분류 성능에서도 최적이라는 의미는 아닙니다.
 
-세 모델의 계층 수·hidden 차원·dropout 탐색 범위는 위 GCN 표와 같으며 키의 모델명 부분만 달라집니다. optimizer와 clipping 범위도 공통입니다. 추가 탐색은 다음과 같습니다.
+네 모델의 계층 수·hidden 차원·dropout 탐색 범위는 위 GCN 표와 같으며 키의 모델명 부분만 달라집니다. optimizer와 clipping 범위도 공통입니다. 추가 탐색은 다음과 같습니다.
 
 | 모델 | 추가 파라미터 | 후보 |
 | --- | --- | --- |
@@ -103,14 +105,16 @@ Hyperband는 `min_iter: 500`입니다. 스크립트는 매 epoch 최적화 지�
 
 ## 6. 선택한 설정으로 노트북 재학습
 
-1. 사용할 실행의 로컬 W&B YAML을 준비합니다. 노트북 기본 경로 `wandb/sweep-utsldekv/config-uh7mds6z.yaml`는 개인 실행 결과입니다.
+1. 사용할 실행의 로컬 W&B YAML을 준비합니다. 노트북 기본 경로 `wandb/sweep-vllbse97/config-t3yov5ho.yaml`는 개인 실행 결과입니다.
 2. [Karate_club_gnn_sweep_validation.ipynb](./Karate_club_gnn_sweep_validation.ipynb)의 `path`를 실제 파일로 수정합니다.
-3. 현재 선택된 GraphSAGE 외에 GCN·GAT를 사용하려면 모델 생성 셀에서 해당 `config_kwargs`와 생성 코드의 주석을 전환합니다.
+3. 현재 선택된 DNN 외에 GCN·GAT·GraphSAGE를 사용하려면 모델 생성 셀에서 해당 `config_kwargs`와 생성 코드의 주석을 전환합니다.
 4. `ai_tutorial` 커널에서 모든 셀을 순서대로 실행합니다.
 
-노트북은 W&B YAML의 각 `{value: ...}` 항목을 추출해 선택한 모델의 `models.GCN.*`, `models.GAT.*` 또는 `models.GraphSAGE.*`와 `optimizer.Adam.*`, `training.gradient_clip_val`을 사용합니다. 모델을 새로 초기화해 500 epoch 학습하고 나머지 30개 노드(`~data.train_mask`)의 손실, 정확도, 예측 클래스와 실제 레이블을 확인합니다.
+노트북은 W&B YAML의 각 `{value: ...}` 항목을 추출해 선택한 모델의 `models.GCN.*`, `models.GAT.*`, `models.GraphSAGE.*` 또는 `models.DNN.*`와 `optimizer.Adam.*`, `training.gradient_clip_val`을 사용합니다. 모델을 새로 초기화해 500 epoch 학습하고 나머지 30개 노드(`~data.train_mask`)의 손실, 정확도, 예측 클래스와 실제 레이블을 확인합니다.
 
 `best.pt`는 로드하지 않습니다. seed는 42(스크립트 기본값은 0), clipping 값은 반올림 없이 사용하며 patience 기반 종료는 적용하지 않습니다. 따라서 기존 실행의 최적 체크포인트 평가와 차이가 있습니다. 평가 노드의 결과를 설정 선택에 반복 사용하면 독립 테스트 결과로 해석하기 어렵습니다.
+
+학습 손실은 `loss_history`에 저장됩니다. 노트북의 NumPy 저장 예제를 활성화하면 프로젝트 루트 기준 `loss_curve_vis/data/dnn_train_loss_hpt.npy`로 내보낼 수 있습니다. 비교 노트북의 실행 위치와 데이터 파일 목록은 [README](./README.md#손실-곡선-비교)를 참고하세요.
 
 ## 7. 단일 실행 및 문제 해결
 
@@ -119,6 +123,7 @@ python wandb_sweep_Karate_club_gnn.py
 python wandb_sweep_Karate_club_gnn.py --wandb --wandb_mode offline
 python wandb_sweep_Karate_club_gnn.py --model_type GAT
 python wandb_sweep_Karate_club_gnn.py --model_type GraphSAGE
+python wandb_sweep_Karate_club_gnn.py --model_type DNN
 python wandb_sweep_Karate_club_gnn.py --help
 python -c "import sys; print(sys.executable)"
 ```

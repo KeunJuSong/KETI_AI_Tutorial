@@ -1,4 +1,4 @@
-"""Train KarateClub GCN, GAT or GraphSAGE with YAML and W&B Sweep overrides.
+"""Train KarateClub GCN, GAT, GraphSAGE or DNN with YAML and W&B overrides.
 
 Sweep Register: python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sweeps/gcn_config.yaml
 Sweep Agent: python -m wandb agent --count 1 ENTITY/PROJECT/SWEEP_ID
@@ -23,7 +23,7 @@ except ImportError:
     wandb = None
     WANDB_AVAILABLE = False
 
-from utils.model import GCN, GAT, GraphSAGE
+from utils.model import GCN, GAT, GraphSAGE, DNN
 from utils.wandb import load_config, init_wandb, apply_sweep_overrides, build_wandb_run_name, resolve_checkpoint_dir
 
 def seed_everything(seed):
@@ -59,7 +59,7 @@ def build_parser():
         "--model_type",
         type=str,
         default="GCN",
-        choices=["GCN", "GAT", "GraphSAGE"],
+        choices=["GCN", "GAT", "GraphSAGE", "DNN"],
         help="Model type to train (default: GCNConv)",
     )
     parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases logging")
@@ -141,6 +141,15 @@ def train(args, config):
         "in_channels": dataset.num_features,
         "hidden_channels": model_config["hidden_channels"],
         "aggr": model_config["aggr"],
+        "num_classes": dataset.num_classes,
+        "num_layers": model_config["num_layers"],
+        "dropout": model_config["dropout"],
+        }
+    elif args.model_type == "DNN":
+        model_class = DNN
+        kwargs = {
+        "in_channels": dataset.num_features,
+        "hidden_channels": model_config["hidden_channels"],
         "num_classes": dataset.num_classes,
         "num_layers": model_config["num_layers"],
         "dropout": model_config["dropout"],
