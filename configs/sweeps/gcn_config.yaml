@@ -1,10 +1,10 @@
-program: wandb_sweep_Karate_club_gcn.py
+program: wandb_sweep_Karate_club_gnn.py
 command:
   - ${env}
   - ${interpreter}
   - ${program}
   - --config=configs/config.yaml
-  - --gnn_model_config=configs/gcn_model_config.yaml
+  - --gnn_model_config=configs/gnn_model_config.yaml
   - --model_type=GCN
   - --wandb
   - --wandb_project=karate-club-gcn-sweep

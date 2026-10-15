@@ -1,9 +1,9 @@
-"""Train KarateClub GCN with YAML configuration and W&B Sweep overrides.
+"""Train KarateClub GCN, GAT or GraphSAGE with YAML and W&B Sweep overrides.
 
 Sweep Register: python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sweeps/gcn_config.yaml
 Sweep Agent: python -m wandb agent --count 1 ENTITY/PROJECT/SWEEP_ID
 
-Train locally: python wandb_sweep_Karate_club_gcn.py
+Train locally: python wandb_sweep_Karate_club_gnn.py
 Sweep assignments are read from wandb.config after wandb.init().
 """
 
@@ -23,7 +23,7 @@ except ImportError:
     wandb = None
     WANDB_AVAILABLE = False
 
-from utils.model import GCN
+from utils.model import GCN, GAT, GraphSAGE
 from utils.wandb import load_config, init_wandb, apply_sweep_overrides, build_wandb_run_name, resolve_checkpoint_dir
 
 def seed_everything(seed):
@@ -52,14 +52,14 @@ def build_parser():
     parser.add_argument(
         "--gnn_model_config",
         type=str,
-        default="configs/gcn_model_config.yaml",
+        default="configs/gnn_model_config.yaml",
         help="Path to gnn model config YAML (gnn.yaml)",
     )
     parser.add_argument(
         "--model_type",
         type=str,
         default="GCN",
-        choices=["GCN"],
+        choices=["GCN", "GAT", "GraphSAGE"],
         help="Model type to train (default: GCNConv)",
     )
     parser.add_argument("--wandb", action="store_true", default=False, help="Enable Weights & Biases logging")
@@ -118,16 +118,33 @@ def train(args, config):
 
     if args.model_type == "GCN":
         model_class = GCN
-    # elif args.model_type == "GAT":
-    #     model_class = GAT
-
-    kwargs = {
+        kwargs = {
         "in_channels": dataset.num_features,
         "hidden_channels": model_config["hidden_channels"],
         "num_classes": dataset.num_classes,
         "num_layers": model_config["num_layers"],
         "dropout": model_config["dropout"],
-    }
+        }
+    elif args.model_type == "GAT":
+        model_class = GAT
+        kwargs = {
+        "in_channels": dataset.num_features,
+        "hidden_channels": model_config["hidden_channels"],
+        "heads": model_config["heads"],
+        "num_classes": dataset.num_classes,
+        "num_layers": model_config["num_layers"],
+        "dropout": model_config["dropout"],
+        }
+    elif args.model_type == "GraphSAGE":
+        model_class = GraphSAGE
+        kwargs = {
+        "in_channels": dataset.num_features,
+        "hidden_channels": model_config["hidden_channels"],
+        "aggr": model_config["aggr"],
+        "num_classes": dataset.num_classes,
+        "num_layers": model_config["num_layers"],
+        "dropout": model_config["dropout"],
+        }
 
     model = model_class(**kwargs)
 

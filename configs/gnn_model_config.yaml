@@ -1,0 +1,16 @@
+---
+models:
+  GCN:
+    hidden_channels: 32
+    num_layers: 2
+    dropout: 0.1
+  GAT:
+    hidden_channels: 512
+    num_layers: 3
+    heads: 4
+    dropout: 0.1
+  GraphSAGE:
+    hidden_channels: 512
+    num_layers: 3
+    aggr: "mean"
+    dropout: 0.1
