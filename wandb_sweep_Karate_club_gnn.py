@@ -96,19 +96,27 @@ def load_data():
     dataset = KarateClub()
     data = dataset[0]  # Get the first graph object.
 
-    val_node_indices = torch.where(data.train_mask == True)[0]+2
+    # 학습 노드를 제외하고 각 클래스에서 검증 노드를 하나씩 선택
+    val_mask = torch.zeros_like(data.train_mask, dtype=torch.bool)
 
-    val_mask = torch.zeros(data.y.size(0), dtype=torch.bool)
-    for i in val_node_indices:
-        val_mask[i.item()] = True
+    for class_id in range(dataset.num_classes):
+        candidates = torch.where(
+            (data.y == class_id) & (~data.train_mask)
+        )[0]
 
-    test_node_indices = torch.where((data.train_mask == False) & (val_mask == False))[0]
-    test_mask = torch.zeros(data.y.size(0), dtype=torch.bool)
-    for i in test_node_indices:
-        test_mask[i.item()] = True
+        if candidates.numel() == 0:
+            raise ValueError(
+                f'클래스 {class_id}에 검증용으로 선택할 노드가 없습니다.'
+            )
+
+        val_mask[candidates[0]] = True
+
+    # 학습 및 검증에 사용하지 않은 나머지 노드를 테스트에 사용
+    test_mask = ~(data.train_mask | val_mask)
 
     data.val_mask = val_mask
     data.test_mask = test_mask
+
     return dataset, data
 
 

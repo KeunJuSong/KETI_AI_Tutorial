@@ -1,6 +1,6 @@
 # Karate Club GNN 튜토리얼과 W&B Sweep
 
-PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다. 현재 코드와 설정을 기준으로 2026-10-16에 점검했으며 학습·검증·테스트 분할과 검증 손실 기반 Sweep 구성을 반영했습니다.
+PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다. 현재 코드와 설정을 기준으로 2026-10-16에 점검했으며 클래스별 검증 노드 선택, seed 0 재학습 및 최신 손실 비교 데이터를 반영했습니다.
 
 ## 파일 구성
 
@@ -33,10 +33,12 @@ PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류�
 | `data.x` | `[34, 34]`; 노드별 원-핫 특징 |
 | `data.y` | `[34]`; 0~3의 커뮤니티 레이블 |
 | `data.train_mask` | `[34]`; 클래스당 1개, 총 4개 학습 노드 |
-| `data.val_mask` | 학습 노드 인덱스에 2를 더한 4개 노드 |
+| `data.val_mask` | 4개; 스크립트·재학습은 클래스별 1개, 입문 노트북은 인덱스 이동 방식 |
 | `data.test_mask` | 학습·검증을 제외한 26개 노드 |
 
-전체 그래프의 특징과 연결을 사용하지만 학습 손실에는 4개 노드의 레이블만 사용합니다. 이미 주어진 그래프의 나머지 노드를 분류하는 반지도·전이적(transductive) 학습입니다. 현재 학습 노드는 `[0, 4, 8, 24]`, 검증 노드는 `[2, 6, 10, 26]`입니다. 검증 노드의 클래스는 `[1, 3, 3, 0]`으로 클래스 2를 포함하지 않습니다. 인덱스를 이동한 고정 분할이며 클래스별 균형 분할은 아닙니다. 스크립트와 두 학습 노트북이 같은 분할 규칙을 사용합니다.
+전체 그래프의 특징과 연결을 사용하지만 학습 손실에는 4개 노드의 레이블만 사용합니다. 이미 주어진 그래프의 나머지 노드를 분류하는 반지도·전이적(transductive) 학습입니다. 학습 노드는 `[0, 4, 8, 24]`입니다. 학습 스크립트와 재학습 노트북은 각 클래스의 미학습 노드 중 인덱스가 가장 작은 노드를 검증용으로 1개씩 선택합니다. 검증 노드의 클래스가 균형을 이루며 무작위 선택이 아니므로 seed를 바꿔도 분할은 같습니다. 현재 검증 노드는 `[1, 5, 14, 25]`이며, 후보가 없는 클래스에는 오류를 발생시킵니다.
+
+입문 노트북은 이전 규칙을 유지해 학습 인덱스에 2를 더한 `[2, 6, 10, 26]`을 검증 노드로 사용합니다. 해당 클래스는 `[1, 3, 3, 0]`으로 클래스 2가 없습니다. 두 방식 모두 학습·검증·테스트 노드는 4·4·26개지만 테스트 노드 구성은 다르므로 결과를 같은 테스트 분할로 비교하면 안 됩니다.
 
 학습 목표는 PyG의 `Data`와 `edge_index`, `GCNConv`, 마스크 기반 손실, 임베딩 시각화, 하이퍼파라미터 탐색과 평가를 이해하는 것입니다.
 
@@ -94,7 +96,7 @@ loss = criterion(out[data.train_mask], data.y[data.train_mask])
 
 - 실제 활성화는 ReLU이지만 일부 설명·애니메이션 주석은 `tanh`를 언급합니다. ReLU 좌표는 `[-1, 1]`로 제한되지 않아 고정 축 `[-1.1, 1.1]` 밖의 점이 잘릴 수 있습니다. 필요하면 전체 기록의 최솟값·최댓값으로 축을 조정하세요.
 - `fps=50` 옆에는 과거 4fps 주석이 남아 있습니다. 실제 설정은 50fps입니다.
-- 입문 노트북의 `seed_everything(42)`는 `torch.manual_seed()`를 호출하지 않아 CPU 초기화를 고정하지 않습니다. 동일 초기화가 필요하면 모델 생성 전에 호출하세요. 그래프 배치는 `nx.spring_layout(..., seed=42)`입니다.
+- 입문 노트북의 `seed_everything(0)`는 `torch.manual_seed()`를 호출하지 않아 CPU 초기화를 고정하지 않습니다. 동일 초기화가 필요하면 모델 생성 전에 호출하세요. 그래프 배치는 `nx.spring_layout(..., seed=42)`입니다.
 - GIF 저장 전에 `results` 폴더가 필요합니다. 없으면 `save_path.parent.mkdir(parents=True, exist_ok=True)`를 저장 호출 앞에 추가하세요.
 
 ## YAML 기반 단일 학습
@@ -148,7 +150,7 @@ python -m wandb agent --count 1 kjsong/karate-club-gcn-sweep/SWEEP_ID
 
 현재 네 모델의 Sweep은 Bayesian 탐색으로 epoch별 검증 손실 `val_loss`를 최소화합니다. 기존 `best_train_loss` 기준 Sweep은 새 YAML로 다시 등록해야 합니다. Windows에서 Python을 직접 실행하므로 Bash는 필요하지 않습니다. 탐색 범위와 Hyperband, 평가 노트북 사용법은 [Sweep 안내](./wanb_sweeps.md)를 참고하세요.
 
-`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다. 첫 설정 셀의 `path`를 실제 파일로 변경해야 합니다. 현재 GAT가 선택되어 있으며, GCN·GraphSAGE·DNN을 평가하려면 설정 파일 경로와 모델 생성 셀의 주석을 함께 전환하세요. `best.pt`를 복원하지 않으며 seed는 42(스크립트 기본값은 0), gradient clip 값은 반올림 없이 사용합니다. patience 없이 500 epoch를 학습하고 `loss_history`에 업데이트 전 학습 손실을 기록합니다. 검증 마스크를 만들지만 검증 손실로 최적 epoch를 선택하지 않으며, 마지막 epoch 모델로 테스트 노드 26개를 평가합니다. 따라서 기존 Sweep 가중치나 결과를 그대로 재현하는 과정은 아닙니다.
+`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다. 첫 설정 셀의 `path`를 실제 파일로 변경해야 합니다. 현재 DNN이 선택되어 있으며, GCN·GAT·GraphSAGE를 평가하려면 설정 파일 경로와 모델 생성 셀의 주석을 함께 전환하세요. `best.pt`를 복원하지 않으며 seed는 스크립트 기본값과 같은 0이고 gradient clip 값은 반올림 없이 사용합니다. patience 없이 500 epoch를 학습하고 `loss_history`에 업데이트 전 학습 손실을 기록합니다. 검증 마스크를 만들지만 검증 손실로 최적 epoch를 선택하지 않으며, 마지막 epoch 모델로 테스트 노드 26개를 평가합니다. 따라서 기존 Sweep 가중치나 결과를 그대로 재현하는 과정은 아닙니다.
 
 ## 손실 곡선 비교
 
@@ -162,7 +164,7 @@ python -m jupyterlab
 
 노트북은 `./data/`를 상대 경로로 읽으므로 커널의 작업 디렉터리를 `loss_curve_vis`로 맞추세요. `data/`의 `gcn_train_loss_basic.npy`, `gcn_train_loss_hpt.npy`, `gat_train_loss_hpt.npy`, `graphsage_train_loss_hpt.npy`, `dnn_train_loss_hpt.npy`가 필요하며 현재 각 배열에는 500 epoch의 기록이 있습니다. 비교 노트북은 파일명에 따라 기본·튜닝 모델의 기록으로 표시합니다. 배열 자체에는 seed나 설정 메타데이터가 없으므로 엄밀한 동일 조건 비교로 해석하지 마세요.
 
-입문 노트북은 `np.save`가 활성화되어 있어 실행 시 `loss_curve_vis/data/gcn_train_loss_basic.npy`를 덮어씁니다. 재학습 노트북의 NumPy import와 `gat_train_loss_hpt.npy` 저장 예제는 주석 처리되어 있으므로 새 곡선이 필요하면 활성화하세요. 다른 모델을 선택할 때는 저장 파일명도 바꾸세요. 저장된 비교 배열은 서로 다른 실행·탐색 기준의 결과가 섞일 수 있으며 `.npy`만으로 생성 조건을 확인할 수 없습니다.
+입문 노트북은 `np.save`가 활성화되어 있어 실행 시 `loss_curve_vis/data/gcn_train_loss_basic.npy`를 덮어씁니다. 재학습 노트북의 NumPy import와 `dnn_train_loss_hpt.npy` 저장 예제는 주석 처리되어 있으므로 새 곡선이 필요하면 활성화하세요. 다른 모델을 선택할 때는 저장 파일명도 바꾸세요. 저장된 비교 배열은 서로 다른 실행·탐색 기준의 결과가 섞일 수 있으며 `.npy`만으로 생성 조건을 확인할 수 없습니다.
 
 ## 실행 시 참고
 
