@@ -1,6 +1,6 @@
 # Karate Club GNN 튜토리얼과 W&B Sweep
 
-PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다. 현재 코드와 설정을 기준으로 2026-10-16에 점검했으며 클래스별 검증 노드 선택, seed 0 재학습 및 최신 손실 비교 데이터를 반영했습니다.
+PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다.
 
 ## 파일 구성
 
@@ -19,8 +19,6 @@ PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류�
 | [wanb_sweeps.md](./wanb_sweeps.md) | 상세 Sweep 실행 안내 |
 | [loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb) | 기본·튜닝 GCN, DNN·GCN 및 GAT·GraphSAGE 학습 손실 비교 |
 
-기존 `Karate_club_gcn.ipynb`는 `Karate_club_gcn_tutorial.ipynb`로 이름이 변경되었습니다. 현재 공통 스크립트는 `wandb_sweep_Karate_club_gnn.py`, 모델 설정은 `configs/gnn_model_config.yaml`, 재학습 노트북은 `Karate_club_gnn_sweep_validation.ipynb`입니다.
-
 ## 데이터와 학습 목표
 
 `torch_geometric.datasets.KarateClub()`으로 데이터를 불러오며 별도 데이터 파일은 필요하지 않습니다.
@@ -33,12 +31,10 @@ PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류�
 | `data.x` | `[34, 34]`; 노드별 원-핫 특징 |
 | `data.y` | `[34]`; 0~3의 커뮤니티 레이블 |
 | `data.train_mask` | `[34]`; 클래스당 1개, 총 4개 학습 노드 |
-| `data.val_mask` | 4개; 스크립트·재학습은 클래스별 1개, 입문 노트북은 인덱스 이동 방식 |
+| `data.val_mask` | 4개; 스크립트·재학습은 클래스별 1개 |
 | `data.test_mask` | 학습·검증을 제외한 26개 노드 |
 
 전체 그래프의 특징과 연결을 사용하지만 학습 손실에는 4개 노드의 레이블만 사용합니다. 이미 주어진 그래프의 나머지 노드를 분류하는 반지도·전이적(transductive) 학습입니다. 학습 노드는 `[0, 4, 8, 24]`입니다. 학습 스크립트와 재학습 노트북은 각 클래스의 미학습 노드 중 인덱스가 가장 작은 노드를 검증용으로 1개씩 선택합니다. 검증 노드의 클래스가 균형을 이루며 무작위 선택이 아니므로 seed를 바꿔도 분할은 같습니다. 현재 검증 노드는 `[1, 5, 14, 25]`이며, 후보가 없는 클래스에는 오류를 발생시킵니다.
-
-입문 노트북은 이전 규칙을 유지해 학습 인덱스에 2를 더한 `[2, 6, 10, 26]`을 검증 노드로 사용합니다. 해당 클래스는 `[1, 3, 3, 0]`으로 클래스 2가 없습니다. 두 방식 모두 학습·검증·테스트 노드는 4·4·26개지만 테스트 노드 구성은 다르므로 결과를 같은 테스트 분할로 비교하면 안 됩니다.
 
 학습 목표는 PyG의 `Data`와 `edge_index`, `GCNConv`, 마스크 기반 손실, 임베딩 시각화, 하이퍼파라미터 탐색과 평가를 이해하는 것입니다.
 
@@ -92,13 +88,6 @@ loss = criterion(out[data.train_mask], data.y[data.train_mask])
 
 ![Karate Club GCN 임베딩 변화](./results/karate_club_embedding.gif)
 
-현재 GIF는 실행 당시의 결과이며 재학습 결과는 초기화와 환경에 따라 달라질 수 있습니다. 노트북에 남아 있는 설명과 코드 차이는 다음과 같습니다.
-
-- 실제 활성화는 ReLU이지만 일부 설명·애니메이션 주석은 `tanh`를 언급합니다. ReLU 좌표는 `[-1, 1]`로 제한되지 않아 고정 축 `[-1.1, 1.1]` 밖의 점이 잘릴 수 있습니다. 필요하면 전체 기록의 최솟값·최댓값으로 축을 조정하세요.
-- `fps=50` 옆에는 과거 4fps 주석이 남아 있습니다. 실제 설정은 50fps입니다.
-- 입문 노트북의 `seed_everything(0)`는 `torch.manual_seed()`를 호출하지 않아 CPU 초기화를 고정하지 않습니다. 동일 초기화가 필요하면 모델 생성 전에 호출하세요. 그래프 배치는 `nx.spring_layout(..., seed=42)`입니다.
-- GIF 저장 전에 `results` 폴더가 필요합니다. 없으면 `save_path.parent.mkdir(parents=True, exist_ok=True)`를 저장 호출 앞에 추가하세요.
-
 ## YAML 기반 단일 학습
 
 ```powershell
@@ -113,32 +102,13 @@ python wandb_sweep_Karate_club_gnn.py --wandb --wandb_entity kjsong
 
 `--model_type GCN`, `GAT`, `GraphSAGE`, `DNN`을 지원합니다. GNN 세 모델은 모든 합성곱 계층에 같은 hidden 차원, ReLU와 dropout을 적용하고 로짓만 반환합니다. GAT는 `concat=False`로 attention head를 결합하고 GraphSAGE는 `aggr`로 이웃 집계 방법을 선택합니다. 입문 노트북의 2차원 임베딩 모델과 구조가 다릅니다. DNN은 GCN 계층 대신 Linear 계층을 쌓고 ReLU·dropout·선형 분류기를 사용합니다. 공통 호출을 위해 `edge_index` 인자를 받지만 사용하지 않고 노드 특징만 처리합니다.
 
-| 모델 | 기본 hidden 차원 | 계층 수 | dropout | 추가 설정 |
-| --- | --- | --- | --- | --- |
-| GCN | 32 | 2 | 0.1 | — |
-| GAT | 512 | 3 | 0.1 | `heads=4` |
-| GraphSAGE | 512 | 3 | 0.1 | `aggr="mean"` |
-| DNN | 512 | 3 | 0.1 | 그래프 연결 미사용 |
-
-| 항목 | 기본 설정 |
-| --- | --- |
-| GCN 계층 수 / hidden 차원 / dropout | 2 / 32 / 0.1 |
-| Adam 학습률 / weight decay | `0.003` / `0.01` |
-| Adam betas / epsilon | `(0.9, 0.999)` / `1e-8` |
-| 최대 epoch / patience | 500 / 80 |
-| Gradient clipping | norm 방식, `1.0` |
-| 기본 seed | CLI `--seed=0` |
-| Sweep 지표 / 체크포인트 선택 | epoch별 `val_loss` 최소화 / 최저 검증 손실 `best_val_loss` |
-
-업데이트 후 `model.eval()`에서 검증 노드 4개의 손실이 개선될 때 `best.pt`를 저장하고 80 epoch 연속 개선이 없으면 종료합니다. W&B에는 매 epoch `epoch`, `loss`(업데이트 전 학습 손실), `val_loss`, `val_accuracy`, `best_val_loss`를 기록합니다. 체크포인트에는 `best_val_loss`를 저장합니다. 스크립트는 테스트 마스크를 생성하지만 테스트 지표 계산과 GIF 생성은 하지 않습니다.
+업데이트 후 `model.eval()`에서 검증 노드 4개의 손실이 개선될 때 `best.pt`를 저장하고 80 epoch 연속 개선이 없으면 종료합니다. W&B에는 매 epoch `epoch`, `loss`(업데이트 전 학습 손실), `val_loss`, `val_accuracy`, `best_val_loss`를 기록합니다. 체크포인트에는 `best_val_loss`를 저장합니다.
 
 `configs/config.yaml`의 로그·체크포인트 경로는 현재 KETI PC의 절대 경로입니다. 다른 PC에서는 먼저 `logging_dir: "logs"`, `checkpoint_dir: "checkpoints"` 등으로 변경하세요.
 
 - W&B 없이 실행하면 기본 체크포인트 디렉터리의 `best.pt`를 사용해 이전 파일을 덮어쓸 수 있습니다.
 - W&B 실행 시 기본 이름은 `<MODEL>-<run_id>`이고 경로는 `checkpoints/<MODEL>-<run_id>-<run_id>/best.pt`입니다. `<MODEL>`은 `GCN`, `GAT`, `GraphSAGE`, `DNN` 중 선택한 모델입니다. `--wandb_run_name NAME`이면 `checkpoints/NAME-<run_id>/best.pt`입니다.
 - W&B 실행 로그는 `logging_dir` 아래 `wandb/`에 저장됩니다. Sweep agent 설정 파일은 프로젝트 루트의 `wandb/`에도 생성될 수 있습니다.
-
-YAML의 `max_global_samples`, `global_batch_size`, `score_alpha`, `accumulate_grad_batches`, `log_every_n_steps`, `log_every_n_samples`, `val_*`, `throughput_enabled`, `log_normalized_violation`은 현재 학습 루프에서 사용하지 않습니다. `checkpointing.monitor`는 YAML에 과거 값 `best_train_loss`로 남아 있지만 현재 루프는 이를 읽지 않고 검증 손실로 선택합니다. `save_last`, 저장 주기 설정도 반영되지 않으며 개선 시 `best.pt`만 저장합니다. `checkpointing.run_scoped`는 경로 처리에 사용되고 생략 시 `true`입니다. 현재 모델 YAML의 GCN·GAT·GraphSAGE·DNN 설정은 해당 `--model_type` 선택 시 사용됩니다.
 
 ## W&B Sweep과 설정 재평가
 
@@ -150,7 +120,7 @@ python -m wandb agent --count 1 kjsong/karate-club-gcn-sweep/SWEEP_ID
 
 현재 네 모델의 Sweep은 Bayesian 탐색으로 epoch별 검증 손실 `val_loss`를 최소화합니다. 기존 `best_train_loss` 기준 Sweep은 새 YAML로 다시 등록해야 합니다. Windows에서 Python을 직접 실행하므로 Bash는 필요하지 않습니다. 탐색 범위와 Hyperband, 평가 노트북 사용법은 [Sweep 안내](./wanb_sweeps.md)를 참고하세요.
 
-`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다. 첫 설정 셀의 `path`를 실제 파일로 변경해야 합니다. 현재 DNN이 선택되어 있으며, GCN·GAT·GraphSAGE를 평가하려면 설정 파일 경로와 모델 생성 셀의 주석을 함께 전환하세요. `best.pt`를 복원하지 않으며 seed는 스크립트 기본값과 같은 0이고 gradient clip 값은 반올림 없이 사용합니다. patience 없이 500 epoch를 학습하고 `loss_history`에 업데이트 전 학습 손실을 기록합니다. 검증 마스크를 만들지만 검증 손실로 최적 epoch를 선택하지 않으며, 마지막 epoch 모델로 테스트 노드 26개를 평가합니다. 따라서 기존 Sweep 가중치나 결과를 그대로 재현하는 과정은 아닙니다.
+`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다.
 
 ## 손실 곡선 비교
 
