@@ -1,0 +1,17 @@
+# Python and notebook caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+venv/
+
+# Local training output and W&B state
+/checkpoints/
+/logs/
+/wandb/
+
+# Local credentials
+.env
+.env.*
+!.env.example

@@ -1,0 +1,21 @@
+---
+logging_dir: "C:/Users/KETI/Desktop/KETI_kjsong/2.Code/KETI_AI_Tutorial/logs/"
+checkpoint_dir: "C:/Users/KETI/Desktop/KETI_kjsong/2.Code/KETI_AI_Tutorial/checkpoints/"
+optimizer:
+  Adam:
+    lr: 3e-3
+    betas:
+      - 0.9
+      - 0.999
+    eps: 1.0e-08
+    weight_decay: 0.01
+training:
+  max_epochs: 500
+  patience: 80
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+checkpointing:
+  monitor: "best_train_loss"
+  save_last: true
+  every_n_epochs: 0
+  every_n_samples: 0

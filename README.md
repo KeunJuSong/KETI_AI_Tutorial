@@ -1,163 +1,148 @@
-# Karate Club GCN 튜토리얼
+# Karate Club GNN 튜토리얼과 W&B Sweep
 
-[Karate_club_gcn.ipynb](./Karate_club_gcn.ipynb)는 PyTorch와 PyTorch Geometric(PyG)을 사용해 그래프 신경망의 기본 원리를 실습하는 노트북입니다. Karate Club 소셜 네트워크에서 일부 노드의 커뮤니티 레이블만으로 GCN(Graph Convolutional Network)을 학습하고, 노드의 2차원 임베딩이 어떻게 변화하는지 애니메이션으로 시각화하고 GIF로 저장합니다.
+PyTorch와 PyTorch Geometric(PyG)으로 Karate Club 그래프의 노드 분류를 실습합니다. 입문 노트북, YAML 기반 학습, W&B 하이퍼파라미터 탐색, 선택한 설정의 재학습·평가로 구성됩니다.
 
-## 학습 목표
+## 파일 구성
 
-- PyG의 `Data` 객체와 그래프 연결 정보인 `edge_index` 이해
-- `GCNConv`를 이용한 그래프 합성곱 모델 구현
-- 학습 노드에만 손실을 적용하는 반지도 학습 이해
-- 학습 전후 노드 임베딩과 커뮤니티 구조 관찰
-- epoch별 임베딩 기록을 이용한 애니메이션 생성 및 GIF 저장
+| 파일 | 역할 |
+| --- | --- |
+| [Karate_club_gcn_tutorial.ipynb](./Karate_club_gcn_tutorial.ipynb) | 데이터 탐색, 2차원 임베딩, 학습, 미학습 노드 평가, GIF 생성 |
+| [wandb_sweep_Karate_club_gnn.py](./wandb_sweep_Karate_club_gnn.py) | GCN·GAT·GraphSAGE·DNN 단일 학습과 W&B Sweep |
+| [Karate_club_gnn_sweep_validation.ipynb](./Karate_club_gnn_sweep_validation.ipynb) | 선택한 Sweep 설정으로 재학습하고 미학습 노드를 평가 |
+| [utils/model.py](./utils/model.py) | GCN, GAT, GraphSAGE와 DNN 기준 모델 |
+| [utils/wandb.py](./utils/wandb.py) | YAML 로드, Sweep 설정 적용, 실행 이름 및 체크포인트 경로 처리 |
+| [configs/config.yaml](./configs/config.yaml) | 최적화, 학습, 로그 및 체크포인트 기본 설정 |
+| [configs/gnn_model_config.yaml](./configs/gnn_model_config.yaml) | 모델 기본 설정 |
+| [configs/sweeps/gcn_config.yaml](./configs/sweeps/gcn_config.yaml), [gat_config.yaml](./configs/sweeps/gat_config.yaml), [graphsage_config.yaml](./configs/sweeps/graphsage_config.yaml), [dnn_config.yaml](./configs/sweeps/dnn_config.yaml) | 모델별 Sweep 명령과 탐색 범위 |
+| [requirements-sweep.txt](./requirements-sweep.txt) | 학습 및 Sweep 의존성 |
+| [launch_gnn.sh](./launch_gnn.sh), [launch_sweep.sh](./launch_sweep.sh) | Bash 실행 도우미 |
+| [wanb_sweeps.md](./wanb_sweeps.md) | 상세 Sweep 실행 안내 |
+| [loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb) | 기본·튜닝 GCN, DNN·GCN 및 GAT·GraphSAGE 학습 손실 비교 |
 
-## 데이터셋
+## 데이터와 학습 목표
 
-노트북은 `torch_geometric.datasets.KarateClub()`으로 그래프를 불러옵니다. 별도의 데이터 파일을 준비할 필요는 없습니다. 아래 값은 노트북에 저장된 출력 기준입니다.
+`torch_geometric.datasets.KarateClub()`으로 데이터를 불러오며 별도 데이터 파일은 필요하지 않습니다.
 
 | 항목 | 값 / 설명 |
 | --- | --- |
-| 그래프 수 | 1 |
-| 노드 수 | 34명 |
+| 그래프 / 노드 수 | 1개 / 34명 |
 | 무방향 연결 수 | 78개 |
-| `edge_index`에 저장된 간선 수 | 156개: 각 무방향 연결을 양방향으로 저장 |
-| 노드 특징 | 34차원 원-핫 벡터 |
-| 커뮤니티 클래스 수 | 4 |
-| 학습 노드 수 | 4개: 클래스당 1개 |
-| 평균 차수 | 약 4.59 |
+| `data.edge_index` | `[2, 156]`; 각 연결을 양방향으로 저장 |
+| `data.x` | `[34, 34]`; 노드별 원-핫 특징 |
+| `data.y` | `[34]`; 0~3의 커뮤니티 레이블 |
+| `data.train_mask` | `[34]`; 클래스당 1개, 총 4개 학습 노드 |
+| `data.val_mask` | 4개; 스크립트·재학습은 클래스별 1개 |
+| `data.test_mask` | 학습·검증을 제외한 26개 노드 |
 
-주요 데이터 속성은 다음과 같습니다.
+전체 그래프의 특징과 연결을 사용하지만 학습 손실에는 4개 노드의 레이블만 사용합니다. 이미 주어진 그래프의 나머지 노드를 분류하는 반지도·전이적(transductive) 학습입니다. 학습 노드는 `[0, 4, 8, 24]`입니다. 학습 스크립트와 재학습 노트북은 각 클래스의 미학습 노드 중 인덱스가 가장 작은 노드를 검증용으로 1개씩 선택합니다. 검증 노드의 클래스가 균형을 이루며 무작위 선택이 아니므로 seed를 바꿔도 분할은 같습니다. 현재 검증 노드는 `[1, 5, 14, 25]`이며, 후보가 없는 클래스에는 오류를 발생시킵니다.
 
-| 속성 | 형태 | 역할 |
-| --- | --- | --- |
-| `data.x` | `[34, 34]` | 노드 특징 행렬; 이 예제에서는 단위 행렬 |
-| `data.edge_index` | `[2, 156]` | 각 열에 출발·도착 노드 번호를 저장하는 COO 형식 |
-| `data.y` | `[34]` | 각 노드의 커뮤니티 레이블(0~3) |
-| `data.train_mask` | `[34]` | 손실 계산에 사용할 노드를 선택하는 불리언 마스크 |
+학습 목표는 PyG의 `Data`와 `edge_index`, `GCNConv`, 마스크 기반 손실, 임베딩 시각화, 하이퍼파라미터 탐색과 평가를 이해하는 것입니다.
 
-전체 노드의 특징과 그래프 연결을 사용하되, 4개 노드의 레이블만 학습에 사용합니다. 따라서 이미 주어진 그래프의 나머지 노드를 분류하는 **반지도·전이적(transductive) 노드 분류** 예제입니다.
+## 실행 환경 준비
 
-## 실행 환경 및 설치
-
-노트북 메타데이터에는 Python `3.10.21`, 커널 표시 이름 `ai_tutorial`이 기록되어 있습니다. 패키지 버전은 고정되어 있지 않습니다. 주요 의존성은 `torch`, `torch_geometric`, `networkx`, `matplotlib`, `IPython`, `Pillow`이며, 실행을 위해 Jupyter와 Python 커널이 필요합니다.
-
-Conda를 사용하는 경우 아래 명령으로 환경을 준비할 수 있습니다.
+입문·재학습 노트북의 메타데이터에는 Python `3.10.21`, 커널 표시 이름 `ai_tutorial`이 기록되어 있습니다. 의존성 버전은 고정되어 있지 않습니다. 프로젝트 루트에서 실행하세요.
 
 ```powershell
 conda create -n ai_tutorial python=3.10 -y
 conda activate ai_tutorial
-python -m pip install torch
-python -m pip install torch_geometric networkx matplotlib pillow jupyterlab ipykernel
+python -m pip install -r requirements-sweep.txt
+python -m pip install jupyterlab ipykernel ipywidgets
 python -m ipykernel install --user --name ai_tutorial --display-name ai_tutorial
 ```
 
-PyG의 기본 사용은 PyTorch 설치 후 `pip install torch_geometric`으로 시작할 수 있습니다. 추가 확장 패키지 설치는 [PyG 공식 설치 문서](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)를 참고하세요. 현재 노트북에는 GPU로 모델과 데이터를 이동하는 코드가 없으며 CPU에서 실행합니다.
+기존 환경이 있으면 생성 단계는 생략합니다. requirements에는 `torch`, `torch-geometric`, `wandb`, `PyYAML`, `matplotlib`, `networkx`, `pillow`, `numpy`가 포함되며 Jupyter 도구는 별도 설치합니다. 추가 확장 설치는 [PyG 공식 설치 안내](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)를 참고하세요. 현재 모델과 데이터를 GPU로 이동하는 코드는 없어 CPU에서 학습합니다.
 
-## 실행 방법
+## 입문 노트북 실행
 
-1. 위에서 준비한 `ai_tutorial` 환경을 활성화합니다.
-2. 이 폴더에서 `python -m jupyterlab`을 실행하고 `Karate_club_gcn.ipynb`를 엽니다.
-3. 커널을 `ai_tutorial`로 선택하고 위에서 아래로 모든 셀을 실행합니다.
-
-VS Code에서도 노트북을 열고 같은 환경의 Python 커널을 선택한 뒤 **Run All**을 사용할 수 있습니다. `%matplotlib inline`이 포함되어 있으므로 Jupyter/IPython 노트북 환경에서 실행하세요.
-
-## 코드 흐름
-
-1. **시각화 함수 정의**: `visualize_graph()`는 NetworkX 그래프를, `visualize_embedding()`은 2차원 노드 임베딩을 그립니다.
-2. **데이터 탐색**: 그래프 수, 특징 수, 클래스 수와 `Data` 속성 및 `edge_index`를 확인합니다.
-3. **그래프 시각화**: `to_networkx(data, to_undirected=True)`로 변환한 그래프를 정답 커뮤니티별 색으로 표시합니다.
-4. **GCN 모델 정의**: 세 개의 그래프 합성곱 계층과 선형 분류기를 구성합니다.
-5. **학습 전 임베딩 확인**: 초기 모델이 생성한 `[34, 2]` 임베딩을 시각화합니다.
-6. **학습 기록 저장**: 마스크로 선택한 노드의 손실을 최소화하면서 매 epoch의 임베딩 좌표, 반복 번호, 손실을 저장합니다.
-7. **애니메이션 생성 및 저장**: `FuncAnimation`으로 산점도의 위치와 학습 정보를 갱신하고, `PillowWriter`로 GIF를 저장한 뒤 노트북에 재생 컨트롤을 표시합니다.
-
-## 모델 구조
+`python -m jupyterlab`으로 `Karate_club_gcn_tutorial.ipynb`를 열고 `ai_tutorial` 커널에서 위에서 아래로 실행합니다. VS Code에서도 같은 Python 환경을 선택한 뒤 Run All을 사용할 수 있습니다.
 
 ```text
 노드 특징 [34, 34] + 그래프 연결 [2, 156]
-    → GCNConv(34, 4) → tanh
-    → GCNConv(4, 4)  → tanh
-    → GCNConv(4, 2)  → tanh
-    → 2차원 임베딩 h [34, 2]
-    → Linear(2, 4)
-    → 클래스별 로짓 out [34, 4]
+    → GCNConv(34, 4) → ReLU
+    → GCNConv(4, 4)  → ReLU
+    → GCNConv(4, 2)  → ReLU
+    → 임베딩 h [34, 2] → Linear(2, 4) → 로짓 out [34, 4]
 ```
 
-각 `GCNConv`는 이웃 노드의 특징을 집계합니다. 세 계층을 거치면서 최대 3-hop 이웃 정보를 반영하고, 특징 차원을 `34 → 4 → 4 → 2`로 줄입니다. `forward()`는 분류 결과인 `out`과 시각화용 임베딩 `h`를 함께 반환합니다. `out`은 확률 변환 전의 로짓이며 `CrossEntropyLoss`에 그대로 전달합니다.
-
-모델 생성 시 `torch.manual_seed(1234)`를 설정하고, 그래프 배치에는 `nx.spring_layout(..., seed=42)`를 사용합니다.
-
-## 학습 설정
-
-| 항목 | 설정 |
-| --- | --- |
-| 손실 함수 | `torch.nn.CrossEntropyLoss()` |
-| 최적화 알고리즘 | `torch.optim.Adam` |
-| 학습률 | `0.01` |
-| 학습 반복 | `range(401)`: 0~400, 총 401회 |
-| 임베딩 기록 주기 | `epoch % 1 == 0`: 매 epoch, 총 401프레임 |
-| 애니메이션 재생 속도 | `fps = 50`: 프레임당 0.02초, 한 번 재생에 약 8.02초 |
-| 프레임 전환 간격 | `interval=1000 / fps`: 20ms |
-| GIF 저장 경로 | 현재 작업 디렉터리 기준 `./results/karate_club_embedding.gif` |
-| 저장 해상도 | `figsize=(7, 7)`, `dpi=100`: 700 × 700px |
-
-반지도 학습을 구현하는 핵심 코드는 다음과 같습니다.
+`forward()`는 로짓과 임베딩을 반환합니다. 학습은 `CrossEntropyLoss`, Adam(`lr=0.01`), `range(500)`으로 0~499의 500회 업데이트를 수행합니다.
 
 ```python
 out, h = model(data.x, data.edge_index)
 loss = criterion(out[data.train_mask], data.y[data.train_mask])
 ```
 
-전체 그래프를 통과해 모든 노드의 출력을 계산하지만, 손실은 `train_mask`가 선택한 4개 노드에 대해서만 계산합니다. 이후 `loss.backward()`와 `optimizer.step()`으로 모델 파라미터를 갱신합니다.
+학습 후 `model.eval()`에서 `data.test_mask`의 26개 노드에 대해 손실과 정확도를 계산합니다. 입문 노트북은 검증 마스크도 생성하지만 학습 중 검증이나 조기 종료에는 사용하지 않습니다. 테스트 결과를 반복적으로 확인하며 설정을 선택하면 독립적인 최종 평가로 해석하기 어렵습니다.
 
-## 임베딩 애니메이션
+### 임베딩 애니메이션
 
-학습 셀은 기존의 개별 그림 출력과 `time.sleep(0.3)` 대신 다음 기록을 누적합니다.
+매 epoch의 임베딩, epoch 번호, 손실을 기록합니다. 임베딩은 해당 업데이트 전 순전파 결과이며 산점도 색은 정답 레이블입니다. 저장된 좌표를 재생하므로 애니메이션 생성 중에는 추가 학습하지 않습니다.
 
-```python
-embedding_history.append(h.detach().cpu().numpy().copy())
-epoch_history.append(epoch)
-loss_history.append(loss.item())
+| 항목 | 현재 설정 |
+| --- | --- |
+| 기록 수 | 500프레임 |
+| 재생 속도 | `fps=50`; 명목상 한 번 재생에 10초 |
+| 프레임 간격 | `interval=1000 / fps`; 20ms |
+| 저장 위치 | `results/karate_club_embedding.gif` |
+| 저장 크기 | `figsize=(7, 7)`, `dpi=100`; 700 × 700px |
+| 노트북 표시 | `ani.to_jshtml(fps=fps)` 재생 컨트롤 |
+
+![Karate Club GCN 임베딩 변화](./results/karate_club_embedding.gif)
+
+## YAML 기반 단일 학습
+
+```powershell
+python wandb_sweep_Karate_club_gnn.py
+python wandb_sweep_Karate_club_gnn.py --wandb --wandb_mode offline
+# 그래프 연결을 사용하지 않는 기준 모델
+python wandb_sweep_Karate_club_gnn.py --model_type DNN
+# 온라인 기록: 최초 로그인 후 실행
+wandb login
+python wandb_sweep_Karate_club_gnn.py --wandb --wandb_entity kjsong
 ```
 
-`detach()`로 학습 그래프에서 분리하고, CPU의 NumPy 배열을 복사해 각 시점의 좌표를 독립적으로 보관합니다. 다음 셀의 `update(frame)`은 `scatter.set_offsets()`로 노드 위치를 바꾸고 epoch와 손실을 갱신합니다. 저장된 좌표를 재생하므로 애니메이션 생성 중에 추가로 학습하지 않습니다.
+`--model_type GCN`, `GAT`, `GraphSAGE`, `DNN`을 지원합니다. GNN 세 모델은 모든 합성곱 계층에 같은 hidden 차원, ReLU와 dropout을 적용하고 로짓만 반환합니다. GAT는 `concat=False`로 attention head를 결합하고 GraphSAGE는 `aggr`로 이웃 집계 방법을 선택합니다. 입문 노트북의 2차원 임베딩 모델과 구조가 다릅니다. DNN은 GCN 계층 대신 Linear 계층을 쌓고 ReLU·dropout·선형 분류기를 사용합니다. 공통 호출을 위해 `edge_index` 인자를 받지만 사용하지 않고 노드 특징만 처리합니다.
 
-마지막 임베딩에 `tanh`가 적용되어 좌표는 `[-1, 1]` 범위에 있습니다. 애니메이션은 양쪽 축을 `[-1.1, 1.1]`로 고정하고 같은 축척을 사용하므로, 프레임마다 화면 크기가 바뀌지 않고 노드 이동을 비교할 수 있습니다.
+업데이트 후 `model.eval()`에서 검증 노드 4개의 손실이 개선될 때 `best.pt`를 저장하고 80 epoch 연속 개선이 없으면 종료합니다. W&B에는 매 epoch `epoch`, `loss`(업데이트 전 학습 손실), `val_loss`, `val_accuracy`, `best_val_loss`를 기록합니다. 체크포인트에는 `best_val_loss`를 저장합니다.
 
-```python
-save_path = Path("./results/karate_club_embedding.gif")
-ani.save(str(save_path), writer=PillowWriter(fps=fps), dpi=100)
-plt.close(fig)
-display(HTML(ani.to_jshtml(fps=fps)))
+`configs/config.yaml`의 로그·체크포인트 경로는 현재 KETI PC의 절대 경로입니다. 다른 PC에서는 먼저 `logging_dir: "logs"`, `checkpoint_dir: "checkpoints"` 등으로 변경하세요.
+
+- W&B 없이 실행하면 기본 체크포인트 디렉터리의 `best.pt`를 사용해 이전 파일을 덮어쓸 수 있습니다.
+- W&B 실행 시 기본 이름은 `<MODEL>-<run_id>`이고 경로는 `checkpoints/<MODEL>-<run_id>-<run_id>/best.pt`입니다. `<MODEL>`은 `GCN`, `GAT`, `GraphSAGE`, `DNN` 중 선택한 모델입니다. `--wandb_run_name NAME`이면 `checkpoints/NAME-<run_id>/best.pt`입니다.
+- W&B 실행 로그는 `logging_dir` 아래 `wandb/`에 저장됩니다. Sweep agent 설정 파일은 프로젝트 루트의 `wandb/`에도 생성될 수 있습니다.
+
+## W&B Sweep과 설정 재평가
+
+```powershell
+python -m wandb sweep --entity kjsong --project karate-club-gcn-sweep configs/sweeps/gcn_config.yaml
+# 출력된 실제 SWEEP_ID로 교체
+python -m wandb agent --count 1 kjsong/karate-club-gcn-sweep/SWEEP_ID
 ```
 
-GIF는 `PillowWriter`로 저장하며, 노트북에는 `to_jshtml()`을 통한 재생 컨트롤이 표시됩니다. `plt.close(fig)`는 별도의 정적 그림이 함께 출력되지 않도록 합니다.
+현재 네 모델의 Sweep은 Bayesian 탐색으로 epoch별 검증 손실 `val_loss`를 최소화합니다. 기존 `best_train_loss` 기준 Sweep은 새 YAML로 다시 등록해야 합니다. Windows에서 Python을 직접 실행하므로 Bash는 필요하지 않습니다. 탐색 범위와 Hyperband, 평가 노트북 사용법은 [Sweep 안내](./wanb_sweeps.md)를 참고하세요.
 
-저장된 결과: [GIF 다운로드](./results/karate_club_embedding.gif)
+`Karate_club_gnn_sweep_validation.ipynb`는 선택한 로컬 W&B YAML을 읽고 모델을 새로 초기화해 500 epoch 재학습합니다.
 
-![Karate Club GCN 학습 중 임베딩 변화](./results/karate_club_embedding.gif)
+## 손실 곡선 비교
 
-재생 속도는 애니메이션 셀의 `fps` 값으로 조절합니다. 기록 주기를 10 epoch로 바꾸려면 학습 셀의 조건을 `epoch % 10 == 0`으로 변경하세요. 이 경우 41프레임이 기록되며, `fps=4`이면 한 번 재생에 약 10.25초가 걸립니다. 기록 주기를 바꾼 후에는 `model = GCN()`을 포함한 학습 셀 전체를 다시 실행한 뒤 애니메이션 셀을 실행하세요.
+[loss_curve_vis/loss_curve_comp.ipynb](./loss_curve_vis/loss_curve_comp.ipynb)는 저장된 NumPy 배열로 기본 GCN과 튜닝 GCN, 튜닝한 DNN과 GCN, 튜닝한 GCN·GAT·GraphSAGE의 학습 손실을 세 그래프로 비교합니다.
 
-## 출력 해석
+```powershell
+conda activate ai_tutorial
+Set-Location loss_curve_vis
+python -m jupyterlab
+```
 
-- 데이터 통계와 특징·레이블·간선 텐서가 출력됩니다.
-- 그래프 그림에서 노드 색은 정답 커뮤니티를 나타냅니다.
-- 학습 전 임베딩의 형태는 `[34, 2]`입니다.
-- 학습 종료 후 표시되는 애니메이션의 산점도에는 반복 번호와 학습 손실이 표시됩니다. 같은 커뮤니티 노드가 임베딩 공간에서 어떻게 모이는지 관찰할 수 있습니다.
+노트북은 `./data/`를 상대 경로로 읽으므로 커널의 작업 디렉터리를 `loss_curve_vis`로 맞추세요. `data/`의 `gcn_train_loss_basic.npy`, `gcn_train_loss_hpt.npy`, `gat_train_loss_hpt.npy`, `graphsage_train_loss_hpt.npy`, `dnn_train_loss_hpt.npy`가 필요하며 현재 각 배열에는 500 epoch의 기록이 있습니다. 비교 노트북은 파일명에 따라 기본·튜닝 모델의 기록으로 표시합니다. 배열 자체에는 seed나 설정 메타데이터가 없으므로 엄밀한 동일 조건 비교로 해석하지 마세요.
 
-임베딩 산점도의 색도 `data.y`에 따른 **정답 레이블**입니다. 예측 클래스의 색을 표시한 그림은 아닙니다. 현재 코드에는 별도의 검증·테스트 마스크, 정확도 계산, 모델 저장이 없으므로 시각화만으로 분류 성능을 수치적으로 판단할 수는 없습니다.
-
-또한 학습 함수가 반환하는 `h`는 해당 반복에서 파라미터를 갱신하기 **전** 순전파로 계산한 임베딩입니다. 최종 갱신 후 임베딩이 필요하면 학습 종료 후 모델을 다시 호출해야 합니다.
+입문 노트북은 `np.save`가 활성화되어 있어 실행 시 `loss_curve_vis/data/gcn_train_loss_basic.npy`를 덮어씁니다. 재학습 노트북의 NumPy import와 `dnn_train_loss_hpt.npy` 저장 예제는 주석 처리되어 있으므로 새 곡선이 필요하면 활성화하세요. 다른 모델을 선택할 때는 저장 파일명도 바꾸세요. 저장된 비교 배열은 서로 다른 실행·탐색 기준의 결과가 섞일 수 있으며 `.npy`만으로 생성 조건을 확인할 수 없습니다.
 
 ## 실행 시 참고
 
-- `ModuleNotFoundError`가 발생하면 선택한 노트북 커널과 패키지를 설치한 환경이 같은지 확인하세요.
-- 저장된 출력에는 `IProgress not found` 경고가 있습니다. 이 경고가 나타나면 같은 환경에 `python -m pip install ipywidgets`로 설치한 뒤 커널을 재시작할 수 있습니다.
-- GIF 저장 경로는 커널의 현재 작업 디렉터리를 기준으로 합니다. 저장 전에 `results` 폴더가 있는지 확인하세요. 폴더가 없으면 저장 호출 앞에 `save_path.parent.mkdir(parents=True, exist_ok=True)`를 추가할 수 있습니다.
-- `Pillow`가 없으면 같은 커널에서 `%pip install pillow`를 실행하세요. GIF 저장에는 FFmpeg가 필요하지 않습니다.
-- 노트북의 `fps = 50` 옆 주석에는 이전 설정인 4fps 설명이 남아 있습니다. 실제 재생 속도는 코드 값인 50fps입니다.
-- HTML 애니메이션은 프레임 이미지를 출력에 포함하므로 저장된 노트북 크기가 커질 수 있습니다. `animation.embed_limit` 경고가 나타나면 기록 주기를 늘리거나 `figsize`를 줄여 프레임 수 또는 크기를 줄일 수 있습니다.
-- 패키지 버전이 고정되어 있지 않아 실행 환경에 따라 손실이나 그림이 달라질 수 있습니다.
+- 모듈을 찾지 못하면 설치한 Python과 노트북 커널이 같은 환경인지 확인하세요.
+- `IProgress not found` 경고에는 같은 환경에 `ipywidgets`를 설치하고 커널을 재시작하세요.
+- GIF 저장에는 Pillow가 필요하며 FFmpeg는 필요하지 않습니다.
+- HTML 애니메이션으로 노트북 크기가 커질 수 있습니다. 기록 주기를 늘리거나 그림 크기를 줄이면 출력 크기를 줄일 수 있습니다.
+- `logs/`, `wandb/`, `checkpoints/`, Python 캐시는 `.gitignore`로 제외됩니다. 검증 노트북이 참조하는 개인 Sweep 설정 파일은 저장소에 포함되지 않습니다.
 
 ## 참고 자료
 
@@ -165,4 +150,5 @@ GIF는 `PillowWriter`로 저장하며, 노트북에는 `to_jshtml()`을 통한 �
 - [KarateClub 데이터셋 문서](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.datasets.KarateClub.html)
 - [GCNConv 문서](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GCNConv.html)
 - [Matplotlib 애니메이션 안내](https://matplotlib.org/stable/users/explain/animations/animations.html)
+- [W&B Sweep 설정 안내](https://docs.wandb.ai/models/sweeps/define-sweep-configuration)
 - [Kipf & Welling, Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/abs/1609.02907)
