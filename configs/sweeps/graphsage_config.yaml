@@ -12,7 +12,7 @@ command:
   # Assignments arrive through wandb.config; do not add ${args}.
 method: bayes
 metric:
-  name: best_train_loss # val/score
+  name: val_loss # val/score
   goal: minimize
 parameters:
   wandb_project:

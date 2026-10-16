@@ -94,7 +94,21 @@ def build_parser():
 
 def load_data():
     dataset = KarateClub()
-    data = dataset[0]
+    data = dataset[0]  # Get the first graph object.
+
+    val_node_indices = torch.where(data.train_mask == True)[0]+2
+
+    val_mask = torch.zeros(data.y.size(0), dtype=torch.bool)
+    for i in val_node_indices:
+        val_mask[i.item()] = True
+
+    test_node_indices = torch.where((data.train_mask == False) & (val_mask == False))[0]
+    test_mask = torch.zeros(data.y.size(0), dtype=torch.bool)
+    for i in test_node_indices:
+        test_mask[i.item()] = True
+
+    data.val_mask = val_mask
+    data.test_mask = test_mask
     return dataset, data
 
 
@@ -198,13 +212,13 @@ def train(args, config):
                 torch.nn.utils.clip_grad_value_(model.parameters(), clip_value)
         optimizer.step()
         metrics = evaluate(
-            model, data, {"train": data.train_mask}
+            model, data, {"val": data.val_mask}
         )
 
-        if not torch.isfinite(torch.tensor(metrics["train_loss"])):
+        if not torch.isfinite(torch.tensor(metrics["val_loss"])):
             raise RuntimeError("Training loss is non-finite")
-        if metrics["train_loss"] < best_loss:
-            best_loss, best_epoch, stale = metrics["train_loss"], epoch, 0
+        if metrics["val_loss"] < best_loss:
+            best_loss, best_epoch, stale = metrics["val_loss"], epoch, 0
             best_state = {key: value.detach().cpu().clone()
                             for key, value in model.state_dict().items()}
             checkpoint = {
@@ -214,7 +228,7 @@ def train(args, config):
                 "model_kwargs": kwargs,
                 "model_state_dict": best_state,
                 "optimizer_state_dict": optimizer.state_dict(),
-                "best_train_loss": best_loss,}
+                "best_val_loss": best_loss,}
             torch.save(checkpoint, checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
             if active_run is not None:
@@ -223,13 +237,13 @@ def train(args, config):
             stale += 1
         if active_run is not None:
             active_run.log({"epoch": epoch, "loss": loss.item(),
-                           **metrics, "best_train_loss": best_loss}, step=epoch)
+                           **metrics, "best_val_loss": best_loss}, step=epoch)
         print(f"epoch{epoch}, loss={loss.item():.4f}")
 
         if stale >= patience:
             break
     if active_run is not None:
-        active_run.summary.update({"best_train_loss": best_loss, "best_epoch": best_epoch,
+        active_run.summary.update({"best_val_loss": best_loss, "best_epoch": best_epoch,
                                    "epochs_trained": epoch})
     return checkpoint_path
 

@@ -1,6 +1,6 @@
 # Karate Club GNN: W&B Sweep 실행 안내
 
-현재 `hpt_wandb` 브랜치의 코드와 YAML을 기준으로 2026-10-15에 점검했습니다. 프로젝트 루트에서 실행하세요. 파일명 `wanb_sweeps.md`는 기존 링크 호환을 위해 유지합니다.
+현재 `hpt_wandb` 브랜치의 코드와 YAML을 기준으로 2026-10-16에 점검했습니다. 프로젝트 루트에서 실행하세요. 파일명 `wanb_sweeps.md`는 기존 링크 호환을 위해 유지합니다.
 
 ## 1. 환경 준비
 
@@ -64,7 +64,7 @@ bash launch_sweep.sh kjsong/karate-club-gcn-sweep/SWEEP_ID
 
 ## 4. 현재 탐색 범위
 
-탐색 방법은 `bayes`, 지표는 `best_train_loss`, 목표는 `minimize`입니다.
+탐색 방법은 `bayes`, 지표는 epoch별 `val_loss`, 목표는 `minimize`입니다.
 
 | 파라미터 | 범위 / 분포 |
 | --- | --- |
@@ -79,7 +79,9 @@ bash launch_sweep.sh kjsong/karate-club-gcn-sweep/SWEEP_ID
 
 Hyperband는 `min_iter: 500`입니다. 스크립트는 매 epoch 최적화 지표를 기록하므로 첫 판단 기준이 최대 학습 길이인 500회 기록에 해당합니다. 현재 설정에서는 학습 도중 자원 절감 효과가 제한적이며 patience는 별도로 먼저 종료를 유발할 수 있습니다. 더 이른 Sweep 종료를 원하면 `min_iter`를 줄이고 새 Sweep을 등록하세요. 실제 Hyperband 판단은 W&B가 수행합니다.
 
-최적화 지표는 학습 노드 4개의 손실입니다. Sweep 스크립트는 검증/테스트 손실·정확도를 계산하지 않으므로 선택한 설정이 미학습 노드 분류 성능에서도 최적이라는 의미는 아닙니다.
+학습 노드 `[0, 4, 8, 24]`의 인덱스에 2를 더해 검증 노드 `[2, 6, 10, 26]`을 만들고, 나머지 26개를 테스트 노드로 사용합니다. 스크립트는 학습 레이블 4개로만 역전파하고 업데이트 후 검증 노드 4개의 `val_loss`와 `val_accuracy`를 계산합니다. 검증 손실의 최솟값은 `best_val_loss`로 기록하며 체크포인트 선택과 patience에 사용합니다. Sweep 최적화·Hyperband 대상은 `best_val_loss`가 아닌 epoch별 `val_loss`입니다.
+
+검증 노드 클래스는 `[1, 3, 3, 0]`으로 클래스 2가 없으며 클래스 균형 분할이 아닙니다. 테스트 마스크는 만들지만 스크립트에서 테스트 지표는 계산하지 않습니다. 테스트 평가는 재학습 노트북에서 수행하세요. 예전 학습 손실 기준 Sweep은 현재 YAML을 새로 등록해야 합니다.
 
 네 모델의 계층 수·hidden 차원·dropout 탐색 범위는 위 GCN 표와 같으며 키의 모델명 부분만 달라집니다. optimizer와 clipping 범위도 공통입니다. 추가 탐색은 다음과 같습니다.
 
@@ -92,29 +94,29 @@ Hyperband는 `min_iter: 500`입니다. 스크립트는 매 epoch 최적화 지�
 
 | 항목 | 현재 동작 |
 | --- | --- |
-| W&B epoch 로그 | `epoch`, `loss`, `train_loss`, `train_accuracy`, `best_train_loss` |
-| Summary | `best_train_loss`, `best_epoch`, `epochs_trained`, `best_model_path`, `checkpoint_dir` |
+| W&B epoch 로그 | `epoch`, `loss`, `val_loss`, `val_accuracy`, `best_val_loss` |
+| Summary | `best_val_loss`, `best_epoch`, `epochs_trained`, `best_model_path`, `checkpoint_dir` |
 | W&B 실행 로그 | 설정된 `logging_dir` 아래 `wandb/` |
 | 기본 W&B 체크포인트 | `checkpoints/<MODEL>-<run_id>-<run_id>/best.pt` |
 | 사용자 지정 실행 이름 | `checkpoints/<NAME>-<run_id>/best.pt` |
 | W&B 없는 실행 | 기본 `checkpoint_dir`의 `best.pt` |
 
-체크포인트에는 최적 epoch, 적용된 config, 모델 클래스·생성 인자, 모델 및 optimizer 상태, `best_train_loss`가 저장됩니다. 손실이 개선될 때 저장하며 `last.pt`는 생성하지 않습니다. 기본 실행 이름과 경로 처리에 각각 run ID가 들어가 기본 경로에는 ID가 두 번 포함됩니다.
+체크포인트에는 최적 epoch, 적용된 config, 모델 클래스·생성 인자, 모델 및 optimizer 상태, `best_val_loss`가 저장됩니다. 손실이 개선될 때 저장하며 `last.pt`는 생성하지 않습니다. 기본 실행 이름과 경로 처리에 각각 run ID가 들어가 기본 경로에는 ID가 두 번 포함됩니다.
 
-`loss`는 dropout이 켜진 업데이트 전 손실입니다. `train_loss`와 체크포인트 선택 지표는 업데이트 후 `model.eval()` 상태의 손실입니다. YAML에 남아 있는 batch·샘플 수·검증·저장 주기 항목 중 현재 사용하지 않는 값은 [README](./README.md#yaml-기반-단일-학습)에 정리했습니다.
+`loss`는 dropout이 켜진 업데이트 전 손실입니다. `val_loss`와 체크포인트 선택 지표는 업데이트 후 `model.eval()` 상태의 손실입니다. YAML에 남아 있는 batch·샘플 수·검증·저장 주기 항목 중 현재 사용하지 않는 값은 [README](./README.md#yaml-기반-단일-학습)에 정리했습니다.
 
 ## 6. 선택한 설정으로 노트북 재학습
 
-1. 사용할 실행의 로컬 W&B YAML을 준비합니다. 노트북 기본 경로 `wandb/sweep-vllbse97/config-t3yov5ho.yaml`는 개인 실행 결과입니다.
+1. 사용할 실행의 로컬 W&B YAML을 준비합니다. 노트북 기본 경로 `wandb/sweep-m8fl3x44/config-torpvxmr.yaml`는 개인 실행 결과입니다.
 2. [Karate_club_gnn_sweep_validation.ipynb](./Karate_club_gnn_sweep_validation.ipynb)의 `path`를 실제 파일로 수정합니다.
-3. 현재 선택된 DNN 외에 GCN·GAT·GraphSAGE를 사용하려면 모델 생성 셀에서 해당 `config_kwargs`와 생성 코드의 주석을 전환합니다.
+3. 현재 선택된 GAT 외에 GCN·GraphSAGE·DNN을 사용하려면 모델 생성 셀에서 해당 `config_kwargs`와 생성 코드의 주석을 전환합니다.
 4. `ai_tutorial` 커널에서 모든 셀을 순서대로 실행합니다.
 
-노트북은 W&B YAML의 각 `{value: ...}` 항목을 추출해 선택한 모델의 `models.GCN.*`, `models.GAT.*`, `models.GraphSAGE.*` 또는 `models.DNN.*`와 `optimizer.Adam.*`, `training.gradient_clip_val`을 사용합니다. 모델을 새로 초기화해 500 epoch 학습하고 나머지 30개 노드(`~data.train_mask`)의 손실, 정확도, 예측 클래스와 실제 레이블을 확인합니다.
+노트북은 W&B YAML의 각 `{value: ...}` 항목을 추출해 선택한 모델의 `models.GCN.*`, `models.GAT.*`, `models.GraphSAGE.*` 또는 `models.DNN.*`와 `optimizer.Adam.*`, `training.gradient_clip_val`을 사용합니다. 모델을 새로 초기화해 500 epoch 학습하고 학습·검증을 제외한 26개 노드(`data.test_mask`)의 손실, 정확도, 예측 클래스와 실제 레이블을 확인합니다.
 
-`best.pt`는 로드하지 않습니다. seed는 42(스크립트 기본값은 0), clipping 값은 반올림 없이 사용하며 patience 기반 종료는 적용하지 않습니다. 따라서 기존 실행의 최적 체크포인트 평가와 차이가 있습니다. 평가 노드의 결과를 설정 선택에 반복 사용하면 독립 테스트 결과로 해석하기 어렵습니다.
+`best.pt`는 로드하지 않습니다. seed는 42(스크립트 기본값은 0), clipping 값은 반올림 없이 사용하며 patience 기반 종료는 적용하지 않습니다. 검증 마스크를 생성하지만 검증 손실로 epoch를 선택하지 않고 마지막 epoch 모델을 평가합니다. 따라서 기존 Sweep 실행의 최적 검증 체크포인트 평가와 차이가 있습니다. 평가 노드의 결과를 설정 선택에 반복 사용하면 독립 테스트 결과로 해석하기 어렵습니다.
 
-학습 손실은 `loss_history`에 저장됩니다. 노트북의 NumPy 저장 예제를 활성화하면 프로젝트 루트 기준 `loss_curve_vis/data/dnn_train_loss_hpt.npy`로 내보낼 수 있습니다. 비교 노트북의 실행 위치와 데이터 파일 목록은 [README](./README.md#손실-곡선-비교)를 참고하세요.
+학습 손실은 `loss_history`에 저장됩니다. 노트북의 NumPy 저장 예제를 활성화하면 프로젝트 루트 기준 `loss_curve_vis/data/gat_train_loss_hpt.npy`로 내보낼 수 있습니다. 비교 노트북의 실행 위치와 데이터 파일 목록은 [README](./README.md#손실-곡선-비교)를 참고하세요.
 
 ## 7. 단일 실행 및 문제 해결
 
